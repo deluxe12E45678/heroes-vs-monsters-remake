@@ -1,0 +1,27 @@
+// WorldMoveMap.xml nodes (coords in the 1025x623 map image, y down).
+(
+    width: 1025, height: 623,
+    bounds: (15, 13, 1003, 607), begin: (145, 575), move_speed: 20,
+    // <Task>: mission markers (Renwu_mark) within maxdisance of the party, level = area level + levelchange
+    task_maps: [44, 45, 46, 84, 85, 86, 87], task_dist: 200, task_level: 1,
+    // <RefreshHero>: hero camps (Yinxiong_mark)
+    hero_maps: [2, 9, 10, 19, 88, 89, 90, 91, 92, 93, 94, 95], hero_dist: 40, hero_level: -3,
+    nodes: [
+        (index: 0, x: 145, y: 558, unlock_level: 1, icon: "BOSS_dian_001", boss_level: 0, boss_map: 0, min_level: 0, max_level: 0, maps: [0], radius: 0, boss_radius: 0, begin_dis: 30, per_pixel: 5),
+        (index: 1, x: 101, y: 402, unlock_level: 1, icon: "BOSS_dian_002", boss_level: 5, boss_map: 6, min_level: 1, max_level: 4, maps: [3, 62, 63, 64, 81, 82], radius: 125, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 2, x: 137, y: 163, unlock_level: 3, icon: "BOSS_dian_003", boss_level: 9, boss_map: 29, min_level: 4, max_level: 8, maps: [3, 65, 66, 67, 83, 78], radius: 130, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 3, x: 261, y: 308, unlock_level: 6, icon: "BOSS_dian_004", boss_level: 13, boss_map: 26, min_level: 8, max_level: 12, maps: [65, 73, 74, 68, 70, 83], radius: 86, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 4, x: 356, y: 149, unlock_level: 9, icon: "BOSS_dian_005", boss_level: 18, boss_map: 43, min_level: 11, max_level: 15, maps: [83, 67, 69, 71, 75, 76], radius: 98, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 5, x: 557, y: 113, unlock_level: 12, icon: "BOSS_dian_006", boss_level: 22, boss_map: 17, min_level: 16, max_level: 20, maps: [4, 5, 8, 78, 79, 80], radius: 120, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 6, x: 475, y: 328, unlock_level: 15, icon: "BOSS_dian_007", boss_level: 26, boss_map: 15, min_level: 20, max_level: 24, maps: [24, 1, 12, 13, 14, 16, 20, 21], radius: 112, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 7, x: 338, y: 495, unlock_level: 18, icon: "BOSS_dian_008", boss_level: 30, boss_map: 39, min_level: 24, max_level: 28, maps: [24, 25, 27, 28, 31, 32, 33], radius: 118, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 8, x: 533, y: 521, unlock_level: 21, icon: "BOSS_dian_009", boss_level: 37, boss_map: 47, min_level: 28, max_level: 33, maps: [36, 37, 38, 40, 41, 42], radius: 113, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 9, x: 750, y: 550, unlock_level: 10, icon: "BOSS_dian_007", boss_level: 40, boss_map: 106, min_level: 33, max_level: 38, maps: [5, 69, 79, 70], radius: 95, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 10, x: 752, y: 410, unlock_level: 21, icon: "BOSS_dian_010", boss_level: 45, boss_map: 105, min_level: 38, max_level: 43, maps: [38, 31, 110, 111], radius: 83, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 11, x: 666, y: 260, unlock_level: 21, icon: "BOSS_dian_011", boss_level: 50, boss_map: 108, min_level: 43, max_level: 48, maps: [40, 69, 76, 80, 42], radius: 80, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 12, x: 750, y: 120, unlock_level: 21, icon: "BOSS_dian_012", boss_level: 57, boss_map: 109, min_level: 48, max_level: 53, maps: [36, 110, 33, 28, 111, 68], radius: 95, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 13, x: 910, y: 180, unlock_level: 21, icon: "BOSS_dian_015", boss_level: 62, boss_map: 114, min_level: 53, max_level: 59, maps: [115, 33, 76, 41, 115, 69, 13], radius: 100, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+        (index: 14, x: 630, y: 375, unlock_level: 21, icon: "BOSS_dian_000", boss_level: 0, boss_map: 0, min_level: 60, max_level: 81, maps: [96, 97, 98, 99, 100, 101, 102, 103], radius: 50, boss_radius: 0, begin_dis: 10, per_pixel: 5),
+        (index: 15, x: 230, y: 400, unlock_level: 21, icon: "worldmap_spot_7", boss_level: 3, boss_map: 107, min_level: 0, max_level: 0, maps: [], radius: 20, boss_radius: 20, begin_dis: 30, per_pixel: 5),
+    ],
+)

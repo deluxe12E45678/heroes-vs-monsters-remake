@@ -1,0 +1,22 @@
+// Siege (GVG) castles, from GVGConfig.xml <Castle_List> and <Reward><Battle> (English 3.4.3 APK)
+(
+    castles: [
+        (boss: 147, name: "Orc Raider", level: 5, min: 1, max: 15, icon: "chengbao_OrcRaider", x: 218.0, y: 405.0),
+        (boss: 148, name: "Bone Shot", level: 10, min: 1, max: 15, icon: "chengbao_BoneShot", x: 445.0, y: 390.0),
+        (boss: 149, name: "Bone Lord", level: 15, min: 11, max: 25, icon: "chengbao_BoneLord", x: 350.0, y: -30.0),
+        (boss: 150, name: "Giant", level: 15, min: 11, max: 25, icon: "chengbao_Giant", x: 142.0, y: -40.0),
+        (boss: 151, name: "Iron Golem", level: 20, min: 11, max: 25, icon: "chengbao_IronGolem", x: 0.0, y: 80.0),
+        (boss: 152, name: "Ogre", level: 20, min: 11, max: 25, icon: "chengbao_Orge", x: 400.0, y: -145.0),
+        (boss: 153, name: "Dark Knight", level: 25, min: 21, max: 35, icon: "chengbao_DarkKnight", x: 478.0, y: 80.0),
+        (boss: 154, name: "Bone Shot", level: 25, min: 21, max: 35, icon: "chengbao_BoneShot2", x: 85.0, y: 210.0),
+        (boss: 155, name: "Stone Golem", level: 28, min: 21, max: 35, icon: "chengbao_stoneGolem", x: 478.0, y: 250.0),
+        (boss: 156, name: "Tauren", level: 28, min: 21, max: 35, icon: "chengbao_Tauren", x: 370.0, y: 130.0),
+        (boss: 157, name: "Tree Demon", level: 31, min: 36, max: 41, icon: "chengbao_TreeDemon", x: 315.0, y: 290.0),
+        (boss: 158, name: "Skeleton", level: 31, min: 36, max: 41, icon: "chengbao_Skeleton", x: 250.0, y: 150.0),
+        (boss: 164, name: "Apeman", level: 40, min: 36, max: 41, icon: "BOSS_dian_015", x: 253.0, y: 167.0),
+    ],
+    stars: (1.0, 0.15, 0.0),
+    exp: (15.0, 3.0, 25.0),
+    money: (30.0, 5.0, 27.0),
+    badges: (2.0, 0.0, 0.0),
+)

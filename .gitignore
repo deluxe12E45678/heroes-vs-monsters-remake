@@ -1,0 +1,6 @@
+target*/
+save*.ron
+*.jks
+*.keystore
+android_keystore/
+*.apk

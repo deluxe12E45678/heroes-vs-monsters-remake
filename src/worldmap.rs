@@ -1,0 +1,323 @@
+//! SceneMoveMap — the world map (worldmap_0..3 stitched → 1025×623, drawn at 2×), nodes from WorldMoveMap.xml
+//! (position, BOSS_dian_* icon, unlock order, level range, map list). Free roam: the party walks wherever you click;
+//! inside an area (radius) random encounters fire after `begindis` px at `propperpixel`‰ per px, the area centre
+//! (bossradius) is its boss camp, and <Task>/<RefreshHero> mission and hero-camp markers start their own battles. BOSS/ARENA/SIEGE top-right,
+//! SUMMON/INN/STORE/SKILLS/TEAM/STASH bottom bar (button_*0/1 textures).
+use crate::{anim::*, battle::BattleSetup, data::GameData, save::Save, ui::*, AppState};
+use bevy::prelude::*;
+
+pub fn plugin(app: &mut App) {
+    app.init_resource::<Roam>().add_systems(OnEnter(AppState::WorldMap), enter)
+        .add_systems(Update, (popup_close, actions, walk, camera_pan, fade, mark_anim).chain().run_if(in_state(AppState::WorldMap)))
+        .add_systems(OnExit(AppState::WorldMap), despawn_screen);
+}
+
+#[derive(Component)]
+struct MapRoot;
+/// Node caption with its unclamped map-space position; kept inside the visible frame while its node is on screen.
+#[derive(Component)]
+struct NodeLabel(Vec2);
+#[derive(Component)]
+struct Walker { dest: Option<Vec2> }
+
+fn node_pos(data: &GameData, i: u32) -> Vec2 {
+    let n = &data.world.nodes[i as usize];
+    Vec2::new((n.x - data.world.width / 2.0) * 2.0, (data.world.height / 2.0 - n.y) * 2.0)
+}
+
+fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameData>, sheets: Res<Sheets>, save: Res<Save>, mut roam: ResMut<Roam>, mut notice: ResMut<crate::battle::NewHeroNotice>) {
+    if std::mem::take(&mut notice.0) { new_hero_popup(&mut cmd, &a, &f); }
+    let root = cmd.spawn((Transform::default(), Visibility::default(), Scr, MapRoot)).id();
+    let mut s = Sprite::from_image(a.load("ui/worldmap.jpg"));
+    s.custom_size = Some(Vec2::new(data.world.width, data.world.height) * 2.0);
+    let bg = cmd.spawn((s, Transform::from_xyz(0.0, 0.0, 0.0))).id();
+    cmd.entity(root).add_child(bg);
+    // fog: mapcover_NNN (BossInfo coverImg) is the map darkened except for the areas opened up to node NNN
+    let cover = save.unlocked.max(1).min(13);
+    let mut fog = Sprite::from_image(a.load(format!("ui/mapcover_{cover:03}.png")));
+    fog.custom_size = Some(Vec2::new(data.world.width, data.world.height) * 2.0);
+    let fe = cmd.spawn((fog, Transform::from_xyz(0.0, 0.0, 0.5))).id();
+    cmd.entity(root).add_child(fe);
+    for n in &data.world.nodes {
+        let p = node_pos(&data, n.index);
+        let unlocked = open(&save, n.index);
+        let icon = if a.get_handle::<Image>(format!("ui/{}.png", n.icon)).is_some() || crate::data::asset_exists(format!("ui/{}.png", n.icon)) { format!("ui/{}.png", n.icon) } else { "ui/BOSS_dian_001.png".into() };
+        let mut s = Sprite::from_image(a.load(icon));
+        s.custom_size = Some(Vec2::new(110.0, 96.0));
+        if !unlocked { s.color = Color::srgb(0.35, 0.35, 0.35); }
+        let e = cmd.spawn((s, Transform::from_translation((p + Vec2::Y * 30.0).extend(1.0)),
+            Hot { size: Vec2::new(110.0, 100.0), act: Act::Custom(1, n.index as i32), normal: None, pressed: None })).id();
+        cmd.entity(root).add_child(e);
+        let lvl = if n.max_level > 0 { format!("Lv{}-{}", n.min_level, n.max_level) } else { "Lv1".into() };
+        let t = cmd.spawn((Text2d::new(if unlocked { lvl } else { "Locked".to_string() }), TextFont { font: f.main.clone().into(), font_size: bevy::text::FontSize::Px(18.0), ..default() },
+            TextColor(Color::WHITE), Transform::from_translation((p + Vec2::new(0.0, -28.0)).extend(2.0)), NodeLabel(p + Vec2::new(0.0, -28.0)))).id();
+        cmd.entity(root).add_child(t);
+    }
+    // hero token: the party leader, walking
+    let lead = save.party.first().map(|&r| save.heroes[r].hero).unwrap_or(0);
+    let start = roam.pos.unwrap_or_else(|| { let (x, y) = data.world.begin; if x > 0.0 { to_world(&data, x, y) } else { node_pos(&data, 0) } });
+    roam.pos = Some(start);
+    roam.pending = None;
+    refill_marks(&data, &save, &mut roam);
+    for (p, kind, _) in &roam.marks {
+        // UserMoveMapTaskNode::initNode: just the looping CompAnimObj (WorldMoveMap.xml animation = Renwu_mark skull for <Task>,
+        // Yinxiong_mark tent for <RefreshHero>); no glow or label
+        let (img, w, h) = if *kind == MarkKind::Task { ("ui/Renwu_mark_sheet.png", 74.0, 64.0) } else { ("ui/Yinxiong_mark_sheet.png", 82.0, 76.0) };
+        let mut sp = Sprite::from_image(a.load(img)); sp.rect = Some(Rect::new(0.0, 0.0, w, h));
+        let m = cmd.spawn((sp, Transform::from_translation(p.extend(3.5)), MarkSprite, MarkAnim(0.0, w, h))).id();
+        cmd.entity(root).add_child(m);
+    }
+    let w = cmd.spawn((Transform::from_translation(start.extend(5.0)), Visibility::default(), Walker { dest: None })).id();
+    cmd.entity(root).add_child(w);
+    match save.party.first().map(|&r| &save.heroes[r]) {
+        Some(oh) => { crate::anim::attach_rig(&mut cmd, w, &hero_key(&data, lead), crate::anim::hero_look(&data, oh.hero, Some(&oh.equip)), 1.0, 0.0); }
+        None => { attach_sheet(&mut cmd, &data, &sheets, w, &hero_key(&data, lead), 1.0, 0.0); }
+    }
+    // HUD (fixed on screen)
+    // BOSS / ARENA / SIEGE in a row top-right, as in the original's SceneMoveMap
+    let hud = [("ui/BOSS_dian_015.png", Vec2::new(200.0, 270.0), Act::Custom(2, 0), "BOSS"),
+               ("ui/arena_icon.png", Vec2::new(305.0, 270.0), Act::Goto(AppState::Arena), "ARENA"),
+               ("ui/bar_map2.png", Vec2::new(410.0, 270.0), Act::Goto(AppState::Siege), "SIEGE"),
+               // WorldMoveMap <InfiniteEnemy icon="worldmap_spot_9" normalShow="SurvivalMode"> (placed in this HUD row: own layout)
+               ("ui/worldmap_spot_9.png", Vec2::new(95.0, 270.0), Act::Custom(7, 0), "SURVIVAL")];
+    for (img, p, act, lbl) in hud {
+        button(&mut cmd, &a, img, None, p, Vec2::new(78.0, 66.0), 50.0, act);
+        text(&mut cmd, &f, lbl, p + Vec2::new(0.0, -42.0), 16.0, Color::WHITE, 51.0);
+    }
+    let bar = [("summon", Act::Goto(AppState::Summon)), ("inn", Act::Goto(AppState::Tavern)), ("shop", Act::Goto(AppState::Store)),
+               ("skill", Act::Goto(AppState::Skills)), ("team", Act::Goto(AppState::Equip)), ("stash", Act::Goto(AppState::Equip))];
+    for (i, (n, act)) in bar.into_iter().enumerate() {
+        let p = Vec2::new(-325.0 + 130.0 * i as f32, -262.0);
+        button(&mut cmd, &a, &format!("ui/button_{n}0.png"), Some(&format!("ui/button_{n}1.png")), p, Vec2::new(115.0, 114.0), 50.0, act);
+    }
+    // the scroll top-left: quests in the original — here returns to the main menu
+    button(&mut cmd, &a, "ui/bar_menu.png", Some("ui/bar_menu_0.png"), Vec2::new(-400.0, 280.0), Vec2::new(146.0, 78.0), 50.0, Act::Goto(AppState::Menu));
+    image(&mut cmd, &a, "ui/coin.png", Vec2::new(-280.0, 280.0), None, 50.0);
+    let g = text(&mut cmd, &f, "", Vec2::new(-220.0, 280.0), 24.0, Color::WHITE, 50.0);
+    cmd.entity(g).insert(crate::common::GoldText);
+}
+
+pub fn open(save: &Save, i: u32) -> bool { i <= save.unlocked.max(1) }
+
+/// Map-image pixel (y down) → map-root space (2×, centre origin, y up), and back.
+fn to_world(data: &GameData, x: f32, y: f32) -> Vec2 { Vec2::new((x - data.world.width / 2.0) * 2.0, (data.world.height / 2.0 - y) * 2.0) }
+fn to_px(data: &GameData, p: Vec2) -> Vec2 { Vec2::new(p.x / 2.0 + data.world.width / 2.0, data.world.height / 2.0 - p.y / 2.0) }
+
+/// Free-roam state of SceneMoveMap, kept while the game runs (position, walked distance, mission/hero markers).
+#[derive(Resource, Default)]
+pub struct Roam { pub pos: Option<Vec2>, walked: f32, boss_armed: bool, marks: Vec<(Vec2, MarkKind, u32)>, pending: Option<(f32, BattleSetup, String)> }
+#[derive(Clone, Copy, PartialEq)]
+enum MarkKind { Task, Hero }
+#[derive(Component)]
+struct MarkSprite;
+#[derive(Component)]
+struct MarkAnim(f32, f32, f32);
+/// the 21-frame mark animations, looped (own design: 15 fps)
+fn mark_anim(time: Res<Time>, mut q: Query<(&mut MarkAnim, &mut Sprite)>) {
+    for (mut m, mut s) in &mut q {
+        m.0 += time.delta_secs();
+        let f = ((m.0 * 15.0) as u32 % 21) as f32;
+        s.rect = Some(Rect::new(f * m.1, 0.0, (f + 1.0) * m.1, m.2));
+    }
+}
+#[derive(Component)]
+struct Banner;
+#[derive(Component)]
+struct Fade(f32);
+
+fn fade(mut cmd: Commands, time: Res<Time>, mut q: Query<(Entity, &mut Fade, &mut Sprite)>) {
+    for (e, mut f, mut s) in q.iter_mut() { f.0 -= time.delta_secs(); s.color = s.color.with_alpha((f.0 / 0.6).clamp(0.0, 1.0)); if f.0 <= 0.0 { cmd.entity(e).despawn(); } }
+}
+
+/// Area (node) whose encounter radius contains map pixel `px`.
+fn area_at<'a>(data: &'a GameData, px: Vec2) -> Option<&'a crate::data::MapNode> {
+    data.world.nodes.iter().filter(|n| n.radius > 0.0 && !n.maps.is_empty() && px.distance(Vec2::new(n.x, n.y)) <= n.radius)
+        .min_by(|a, b| px.distance(Vec2::new(a.x, a.y)).total_cmp(&px.distance(Vec2::new(b.x, b.y))))
+}
+
+/// Refill mission (<Task>, tent) and hero-camp (<RefreshHero>) markers: random points inside unlocked areas near the party.
+fn refill_marks(data: &GameData, save: &Save, roam: &mut Roam) {
+    let here = to_px(data, roam.pos.unwrap_or_default());
+    for (kind, maps, dist, want) in [(MarkKind::Task, &data.world.task_maps, data.world.task_dist, 1), (MarkKind::Hero, &data.world.hero_maps, data.world.hero_dist, 1)] {
+        if maps.is_empty() { continue; }
+        let mut tries = 0;
+        while roam.marks.iter().filter(|m| m.1 == kind).count() < want && tries < 200 {
+            tries += 1;
+            // UserMoveMapInfoGameObject: random angle, distance 25 + rand(maxdisance) from the party
+            let ang = fastrand::f32() * std::f32::consts::TAU;
+            let c = here + Vec2::new(ang.cos(), ang.sin()) * (25.0 + fastrand::f32() * dist);
+            let Some(n) = area_at(data, c) else { continue };
+            if !open(save, n.index) || c.distance(Vec2::new(n.x, n.y)) < 45.0 { continue; }
+            // GuideConfig <FirstRefreshHero mapindex=113 level=1>: the first hero camp is map 113 (drops the Archer)
+            let first = kind == MarkKind::Hero && save.heroes.iter().all(|o| o.hero != 5);
+            roam.marks.push((to_world(data, c.x, c.y), kind, if first { 113 } else { maps[fastrand::usize(..maps.len())] }));
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn actions(mut cmd: Commands, a: Res<AssetServer>, mut clicked: ResMut<Clicked>, data: Res<GameData>, save: Res<Save>, mut setup: ResMut<BattleSetup>,
+           mut next: ResMut<NextState<AppState>>, mut q: Query<&mut Walker>, mut toast: ResMut<Toast>, k: Res<ButtonInput<KeyCode>>,
+           mouse: Res<ButtonInput<MouseButton>>, cur: Res<Cursor>, hots: Query<(&Hot, &GlobalTransform, &InheritedVisibility)>,
+           root: Query<&Transform, With<MapRoot>>, mut roam: ResMut<Roam>, time: Res<Time>) {
+    if k.just_pressed(KeyCode::Escape) { next.set(AppState::Tavern); }
+    // "Monsters encountered!" banner, then the battle
+    if let Some((t, s, _)) = &mut roam.pending {
+        *t -= time.delta_secs();
+        if *t <= 0.0 { *setup = s.clone(); roam.pending = None; next.set(AppState::Battle); }
+        clicked.0.clear();
+        return;
+    }
+    let Ok(mut w) = q.single_mut() else { return };
+    for act in clicked.0.drain(..) {
+        match act {
+            Act::Custom(1, i) => {
+                let i = i as u32;
+                if !open(&save, i) { toast.0 = Some(("Locked - defeat the previous area first".into(), 2.0)); continue; }
+                let n = &data.world.nodes[i as usize];
+                w.dest = Some(to_world(&data, n.x, n.y));
+            }
+            Act::Custom(7, _) => {
+                start_battle(&mut roam, BattleSetup { node: 0, map: data.world.nodes.get(1).map(|n| n.maps[0]).unwrap_or(0), level: (0, 0), boss: false, arena: None, tutorial: false, siege: None, survival: true }, "SurvivalMode", &mut cmd, &a);
+            }
+            Act::Custom(2, _) => {
+                let px = to_px(&data, roam.pos.unwrap_or_default());
+                match area_at(&data, px).filter(|n| open(&save, n.index) && n.boss_level > 0) {
+                    Some(n) => w.dest = Some(to_world(&data, n.x, n.y)),
+                    None => toast.0 = Some(("Walk into an area to find its boss".into(), 2.0)),
+                }
+            }
+            _ => {}
+        }
+    }
+    // click on open ground: walk there (free roam inside the map's walkable rectangle)
+    if mouse.just_pressed(MouseButton::Left) {
+        if let (Some(p), Ok(r)) = (cur.world, root.single()) {
+            let over_ui = hots.iter().any(|(h, gt, v)| v.get() && (p - gt.translation().truncate()).abs().cmple(h.size / 2.0).all());
+            if !over_ui {
+                let (x0, y0, x1, y1) = data.world.bounds;
+                let px = to_px(&data, p - r.translation.truncate());
+                let px = if x1 > x0 { Vec2::new(px.x.clamp(x0, x1), px.y.clamp(y0, y1)) } else { px };
+                w.dest = Some(to_world(&data, px.x, px.y));
+                let m = cmd.spawn((Sprite { image: a.load("ui/arrow_move.png"), custom_size: Some(Vec2::new(60.0, 30.0)), ..default() },
+                    Transform::from_translation((p).extend(40.0)), Scr, Fade(0.6))).id();
+                let _ = m;
+            }
+        }
+    }
+}
+
+fn start_battle(roam: &mut Roam, setup: BattleSetup, banner: &str, cmd: &mut Commands, a: &AssetServer) {
+    roam.walked = 0.0;
+    roam.pending = Some((1.3, setup, banner.into()));
+    cmd.spawn((Sprite::from_image(a.load(format!("ui/{banner}.png"))), Transform::from_xyz(0.0, 60.0, 80.0), Scr, Banner));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn walk(mut cmd: Commands, a: Res<AssetServer>, time: Res<Time>, data: Res<GameData>, mut save: ResMut<Save>, mut roam: ResMut<Roam>,
+        mut q: Query<(&mut Walker, &mut Transform, &Children)>, mut an: Query<&mut Anim>, mut toast: ResMut<Toast>,
+        marks: Query<Entity, With<MarkSprite>>, root: Query<Entity, With<MapRoot>>) {
+    if roam.pending.is_some() { return; }
+    let Ok((mut w, mut t, ch)) = q.single_mut() else { return };
+    let set_anim = |an: &mut Query<&mut Anim>, row: Row, flip: Option<bool>| for c in ch.iter() { if let Ok(mut a) = an.get_mut(c) { a.play(row, false); if let Some(f) = flip { a.flip = f; } } };
+    let Some(dest) = w.dest else { set_anim(&mut an, Row::Standby, None); return };
+    let pos = t.translation.truncate();
+    let d = dest - pos;
+    // Map movespeed="20": taken as 2×movespeed map pixels per second (×2 to map-root space), so the
+    // walk cycle (12 fps) roughly matches the ground covered; the old 260/s was about 3× too fast.
+    let step = data.world.move_speed.max(5.0) * 2.0 * 2.0 * time.delta_secs();
+    set_anim(&mut an, Row::Move, if d.x.abs() > 1.0 { Some(d.x < 0.0) } else { None });
+    let np = if d.length() <= step { w.dest = None; dest } else { pos + d.normalize() * step };
+    let px = to_px(&data, np);
+    // locked areas are closed off
+    if let Some(n) = data.world.nodes.iter().find(|n| n.radius > 0.0 && !open(&save, n.index) && px.distance(Vec2::new(n.x, n.y)) <= n.radius * 0.8) {
+        w.dest = None; toast.0 = Some((format!("Locked area (Lv{}-{})", n.min_level, n.max_level), 2.0)); let _ = n; return;
+    }
+    let moved = (np - pos).length() / 2.0; // in map pixels
+    t.translation = np.extend(5.0);
+    roam.pos = Some(np);
+    let area = area_at(&data, px);
+    if let Some(n) = area { if save.current_node != n.index { save.current_node = n.index; } }
+    // boss camp: reaching the area centre (bossradius) fights its boss
+    let at_boss = area.filter(|n| n.boss_level > 0 && px.distance(Vec2::new(n.x, n.y)) <= n.boss_radius.max(12.0));
+    match at_boss {
+        Some(n) if roam.boss_armed => {
+            roam.boss_armed = false; w.dest = None;
+            let banner = if data.world.nodes.len() > 15 && n.index == 15 { "Hero_Encountered".to_string() } else { format!("Boss_Encountered_{}", n.index.clamp(1, 13)) };
+            start_battle(&mut roam, BattleSetup { node: n.index, map: n.boss_map, level: (n.boss_level, n.boss_level), boss: true, arena: None, tutorial: false, siege: None , survival: false }, &banner, &mut cmd, &a);
+            save.write();
+            return;
+        }
+        None => roam.boss_armed = true,
+        _ => {}
+    }
+    // mission / hero-camp markers
+    if let Some(k) = roam.marks.iter().position(|m| m.0.distance(np) <= 40.0) {
+        let (_, kind, map) = roam.marks.remove(k);
+        let n = area.unwrap_or(&data.world.nodes[1]);
+        let (lo, hi) = (n.min_level.max(1), n.max_level.max(1));
+        let ch = if kind == MarkKind::Task { data.world.task_level } else { data.world.hero_level };
+        let first = map == 113;
+        let map = if data.waves.maps.contains_key(&map) { map } else { n.maps[0] };
+        w.dest = None;
+        for e in marks.iter() { cmd.entity(e).despawn(); }
+        start_battle(&mut roam, BattleSetup { node: n.index, map, level: if first { (1, 1) } else { ((lo + ch).max(1), (hi + ch).max(1)) }, boss: false, arena: None, tutorial: false, siege: None , survival: false },
+            if kind == MarkKind::Task { "Monsters_encountered" } else { "Hero_Encountered" }, &mut cmd, &a);
+        save.write();
+        return;
+    }
+    // random encounters: after `begindis` pixels inside an area, `propperpixel`‰ chance per pixel walked
+    if let Some(n) = area.filter(|n| open(&save, n.index)) {
+        roam.walked += moved;
+        if roam.walked > n.begin_dis && fastrand::f32() < 1.0 - (1.0 - n.per_pixel / 1000.0).powf(moved) {
+            let maps: Vec<u32> = n.maps.iter().copied().filter(|m| data.waves.maps.contains_key(m)).collect();
+            if !maps.is_empty() {
+                w.dest = None;
+                start_battle(&mut roam, BattleSetup { node: n.index, map: maps[fastrand::usize(..maps.len())], level: (n.min_level, n.max_level), boss: false, arena: None, tutorial: false, siege: None , survival: false },
+                    "Monsters_encountered", &mut cmd, &a);
+                save.write();
+            }
+        }
+    } else { roam.walked = 0.0; }
+    let _ = root;
+}
+
+/// Keep the walker centred, clamped to the map edges.
+fn camera_pan(walker: Query<&Transform, (With<Walker>, Without<MapRoot>, Without<NodeLabel>)>, mut root: Query<&mut Transform, (With<MapRoot>, Without<NodeLabel>)>,
+              mut labels: Query<(&NodeLabel, &mut Transform), (Without<MapRoot>, Without<Walker>)>, data: Res<GameData>) {
+    let (Ok(w), Ok(mut r)) = (walker.single(), root.single_mut()) else { return };
+    let half = Vec2::new(data.world.width, data.world.height) - SCREEN / 2.0; // map half-size(×2/2) − screen half
+    let want = (-w.translation.truncate()).clamp(-half, half);
+    r.translation = r.translation.truncate().lerp(want, 0.15).extend(0.0);
+    let off = r.translation.truncate();
+    for (l, mut t) in labels.iter_mut() {
+        let g = l.0 + off;
+        let edge = SCREEN.x / 2.0 - 55.0;
+        let x = if g.x.abs() < SCREEN.x / 2.0 + 60.0 { g.x.clamp(-edge, edge) } else { g.x };
+        let y = if g.y.abs() < SCREEN.y / 2.0 + 40.0 { g.y.clamp(-SCREEN.y / 2.0 + 15.0, SCREEN.y / 2.0 - 15.0) } else { g.y };
+        // keep clear of the BOSS/ARENA/SIEGE row in the top-right corner
+        let y = if x > 150.0 && y > 205.0 && y < SCREEN.y / 2.0 + 40.0 { 192.0 } else { y };
+        t.translation.x = x - off.x; t.translation.y = y - off.y;
+    }
+}
+
+#[derive(Component)]
+struct NoticePopup;
+/// UserNoticeFrameGameObject as SceneGameOver leaves it for the map: dim write overlay, tanchuang01 frame, the English
+/// 3.4.3 string, button_ok. Own design: text size and the button's y inside the frame.
+fn new_hero_popup(cmd: &mut Commands, a: &AssetServer, f: &Fonts) {
+    let mut w = Sprite::from_image(a.load("ui/write.png")); w.custom_size = Some(SCREEN * 1.2); w.color = Color::srgba(0.0, 0.0, 0.0, 120.0 / 255.0);
+    let mut es = vec![cmd.spawn((w, Transform::from_xyz(0.0, 0.0, 90.0), Scr)).id()];
+    es.push(image(cmd, a, "ui/tanchuang01.png", Vec2::ZERO, None, 91.0));
+    let t = text(cmd, f, "A new hero has joined your cause!\nGo to the Team to use him!", Vec2::new(0.0, 40.0), 26.0, Color::WHITE, 92.0);
+    es.push(t);
+    es.push(button(cmd, a, "ui/button_ok.png", Some("ui/button_ok_0.png"), Vec2::new(0.0, -90.0), Vec2::new(140.0, 60.0), 92.0, Act::Custom(90, 0)));
+    for e in es { cmd.entity(e).insert(NoticePopup); }
+}
+
+/// while the notice is up it takes every click (modal); button_ok or Enter closes it
+fn popup_close(mut cmd: Commands, mut clicked: ResMut<Clicked>, k: Res<ButtonInput<KeyCode>>, popup: Query<Entity, With<NoticePopup>>) {
+    if popup.is_empty() { return; }
+    let close = clicked.0.drain(..).any(|c| matches!(c, Act::Custom(90, _))) || k.just_pressed(KeyCode::Enter);
+    if close { for e in &popup { cmd.entity(e).despawn(); } }
+}
