@@ -168,6 +168,23 @@ fn state_music(mut cmd: Commands, st: Res<State<AppState>>, a: Res<AssetServer>,
 mod tests {
     use super::*;
     fn d() -> data::GameData { data::GameData::load().unwrap() }
+    #[test] fn learned_actives_and_upgrades() {
+        let d = d();
+        let mut oh = save::Save::new_hero(0, Some(2));
+        oh.skills.insert(11, 1); oh.skills.insert(101, 1);
+        let v = stats::learned_actives(&d, &oh);
+        assert_eq!(v.iter().map(|(s, _)| s.name.as_str()).collect::<Vec<_>>(), ["Taunt", "Trip"]);
+        // Bold Taunt hangs under Taunt: its timed damage cut is added to Taunt
+        assert!(v[0].0.attrs.len() == 2);
+        let mut ar = save::Save::new_hero(5, Some(8));
+        ar.skills.insert(306, 1); // Great Rapid Shot +15% on Rapid Shot's 50%
+        let v = stats::learned_actives(&d, &ar);
+        assert_eq!(v[0].0.attrs[0].data, Some(65.0));
+        let mut cl = save::Save::new_hero(4, Some(5));
+        cl.skills.insert(211, 1); // Quick Healing Circle: -1 s cooldown
+        let base = d.skill(5).unwrap().cd_ms.unwrap() as f32 / 1000.0;
+        assert_eq!(stats::learned_actives(&d, &cl)[0].1, base - 1.0);
+    }
 
     #[test] fn new_game_is_valid() {
         let data = d();

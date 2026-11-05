@@ -32,19 +32,19 @@ struct StatsText;
 struct AttrPage;
 #[derive(Component)]
 struct StatesBtn;
-/// Base / Equipment / Perks / Total table drawn inside the description box whenever no item is being inspected
-/// (own layout: the original only has the equipments_0 attribute page).
+/// Base / Equipment / Perks / Total table on the attribute page (equipments_0, opened with the figure button) — own layout:
+/// the original page only lists NAME / LEVEL / EXP / HP / Defense / hand weapons.
 #[derive(Component)]
 struct StatCell(usize, usize);
 #[derive(Resource, Default)]
 struct ShowStats(bool);
 
-const TABLE_ROWS: usize = 7;
+const TABLE_ROWS: usize = 14;
+/// row usize::MAX = header line
 fn cell_pos(row: usize, col: usize) -> Vec2 {
-    let half = row / TABLE_ROWS; let r = row % TABLE_ROWS;
-    let x0 = -462.0 + half as f32 * 350.0;
-    let x = if col == 0 { x0 } else { x0 + 120.0 + 54.0 * col as f32 };
-    Vec2::new(x, -186.0 - 17.0 * (r + 1) as f32)
+    let x = if col == 0 { -446.0 } else { [0.0, -246.0, -176.0, -106.0, -36.0][col] };
+    let r = if row == usize::MAX { 0.0 } else { row as f32 + 1.0 };
+    Vec2::new(x, 80.0 - 16.0 * r)
 }
 
 /// Rows of (stat, base, equipment, perks, total) from hero_fighter with/without equipment and passives.
@@ -98,21 +98,21 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     cmd.entity(b).insert(StatesBtn);
     let page = image(&mut cmd, &a, "ui/equipments_0.png", PARCH, None, 4.6);
     cmd.entity(page).insert((AttrPage, Visibility::Hidden));
-    let st = cmd.spawn((Text2d::new(""), TextFont { font: f.main.clone().into(), font_size: bevy::text::FontSize::Px(20.0), ..default() },
-        TextColor(Color::srgb(0.3, 0.15, 0.05)), bevy::sprite::Anchor::TOP_LEFT,
-        Transform::from_translation((PARCH + Vec2::new(-200.0, 140.0)).extend(4.7)), Visibility::Hidden, Scr, StatsText, AttrPage)).id();
+    let st = cmd.spawn((Text2d::new(""), TextFont { font: f.main.clone().into(), font_size: bevy::text::FontSize::Px(19.0), ..default() },
+        TextColor(Color::srgb(0.45, 0.1, 0.0)), bevy::sprite::Anchor::CENTER_LEFT, FitBox { max_w: 330.0, max_h: 26.0, base: 19.0, min: 12.0 },
+        Transform::from_translation(Vec2::new(-446.0, 150.0).extend(4.7)), Visibility::Hidden, Scr, StatsText, AttrPage)).id();
     let _ = st;
-    for half in 0..2 {
-        for (c, h) in ["", "Base", "Equip", "Perks", "Total"].iter().enumerate() {
-            let p = cell_pos(half * TABLE_ROWS, c) + Vec2::new(0.0, 17.0);
-            let e = text(&mut cmd, &f, *h, p, 14.0, Color::srgb(1.0, 0.92, 0.7), 6.0);
-            cmd.entity(e).insert((StatCell(usize::MAX, c), if c == 0 { bevy::sprite::Anchor::CENTER_LEFT } else { bevy::sprite::Anchor::CENTER_RIGHT }));
-        }
+    // "STATS" caption under the figure button so the page is easy to find
+    let cap = text(&mut cmd, &f, "STATS", Vec2::new(-60.0, 176.0), 15.0, Color::srgb(1.0, 0.92, 0.7), 4.9);
+    let _ = cap;
+    for (c, h) in ["", "Base", "Equip", "Perks", "Total"].iter().enumerate() {
+        let e = text(&mut cmd, &f, *h, cell_pos(usize::MAX, c), 14.0, Color::srgb(0.45, 0.1, 0.0), 4.8);
+        cmd.entity(e).insert((StatCell(usize::MAX, c), AttrPage, Visibility::Hidden, if c == 0 { bevy::sprite::Anchor::CENTER_LEFT } else { bevy::sprite::Anchor::CENTER_RIGHT }));
     }
-    for r in 0..TABLE_ROWS * 2 {
+    for r in 0..TABLE_ROWS {
         for c in 0..5 {
-            let e = text(&mut cmd, &f, "", cell_pos(r, c), 14.0, if c == 4 { Color::srgb(0.45, 0.1, 0.0) } else { Color::srgb(0.25, 0.15, 0.05) }, 6.0);
-            cmd.entity(e).insert((StatCell(r, c), if c == 0 { bevy::sprite::Anchor::CENTER_LEFT } else { bevy::sprite::Anchor::CENTER_RIGHT }));
+            let e = text(&mut cmd, &f, "", cell_pos(r, c), 14.0, if c == 4 { Color::srgb(0.45, 0.1, 0.0) } else { Color::srgb(0.25, 0.15, 0.05) }, 4.8);
+            cmd.entity(e).insert((StatCell(r, c), AttrPage, Visibility::Hidden, if c == 0 { bevy::sprite::Anchor::CENTER_LEFT } else { bevy::sprite::Anchor::CENTER_RIGHT }));
         }
     }
     cmd.insert_resource(ShowStats(true));
@@ -122,20 +122,19 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
 /// UserHeroAttrGameObject lines (3.4.3 English format strings): NAME / LEVEL (MAX) / EXP / HP / Defense / MAINHAND, OFFHAND with Damage and Critical
 fn stats_line(data: &GameData, save: &Save, r: usize) -> String {
     let oh = &save.heroes[r];
-    let (ft, _ex) = stats::hero_fighter(data, oh);
     let need = stats::exp_to_next(data, oh);
-    let mut s = format!("NAME: {}\nLEVEL: {}{}\nEXP: {} / {}\nHP: {:.0}\nDefense: {}\n", data.hero(oh.hero).class_name, oh.level,
-        if oh.level >= 50 { " (MAX)" } else { "" }, oh.exp, need, ft.max_hp, ft.ac);
-    for (lbl, k) in [("MAINHAND", 3usize), ("OFFHAND", 2usize)] {
-        match oh.equip[k].and_then(|i| data.item(i)) {
-            Some(it) => {
-                s += &format!("{lbl}: {}\n", it.name.trim());
-                if let (Some(lo), Some(hi)) = (it.min_attack, it.max_attack) { s += &format!("      Damage: {} ~ {}\n      Critical: {} %\n", lo + ft.attack, hi + ft.attack, ft.crit_rate); }
-            }
-            None => s += &format!("{lbl}: -\n"),
-        }
-    }
-    s
+    format!("{}   LEVEL {}{}   EXP {} / {}", data.hero(oh.hero).class_name, oh.level, if oh.level >= 50 { " (MAX)" } else { "" }, oh.exp, need)
+}
+
+/// Description box text while no item is inspected: the hero's totals and where the breakdown is.
+fn hero_summary(data: &GameData, save: &Save, r: usize) -> (String, String) {
+    let oh = &save.heroes[r];
+    let (ft, ex) = stats::hero_fighter(data, oh);
+    let mut v = vec![format!("HP {:.0}", ft.max_hp), format!("Damage {}~{}", ft.weapon_min + ft.attack, ft.weapon_max + ft.attack), format!("Defense {}", ft.ac),
+        format!("Critical {}%", ft.crit_rate), format!("Attack every {:.1}s", ft.attack_interval), format!("Move {:.0}", ft.move_speed)];
+    if ex.avoid_pct != 0 { v.push(format!("Avoid {}%", ex.avoid_pct)); }
+    (format!("{}  Lv {}", data.hero(oh.hero).class_name, oh.level),
+     format!("{}\nTap an item to see what it adds. Tap STATS (the figure button above) for the Base / Equip / Perks breakdown.", v.join("   ·   ")))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -187,7 +186,7 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
             _ => {}
         }
         save.write();
-        show.0 = true; set_desc("", "", &mut qt, &mut qb);
+        show.0 = true;
         rb.0 = true;
     }
     for c in std::mem::take(&mut ev.clicks) {
@@ -195,8 +194,7 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
         let id = slot_item(&save, r, c);
         let again = qt.single().map(|t| !t.0.is_empty()).unwrap_or(false) && !show.0 && id.is_some_and(|i| qt.single().map(|t| t.0.starts_with(data.item(i).map(|e| e.name.trim()).unwrap_or("?"))).unwrap_or(false));
         show.0 = id.is_none() || again;
-        let (t, b) = if show.0 { Default::default() } else { id.map(|i| item_desc(&data, i)).unwrap_or_default() };
-        set_desc(t, b, &mut qt, &mut qb);
+        if !show.0 { let (t, b) = id.map(|i| item_desc(&data, i)).unwrap_or_default(); set_desc(t, b, &mut qt, &mut qb); }
         rb.0 = true;
     }
     if rb.0 {
@@ -207,9 +205,9 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
         cmd.entity(e).insert(HeroFig);
         if let Ok(mut s) = stq.single_mut() { s.0 = stats_line(&data, &save, r); }
         let rows = breakdown(&data, &save.heroes[r]);
-        for (c, mut t, mut v) in &mut cells {
-            *v = if show.0 { Visibility::Inherited } else { Visibility::Hidden };
+        for (c, mut t, _) in &mut cells {
             if c.0 != usize::MAX { let s = rows.get(c.0).map(|x| x[c.1].clone()).unwrap_or_default(); if t.0 != s { t.0 = s; } }
         }
+        if show.0 { let (t, b) = hero_summary(&data, &save, r); set_desc(t, b, &mut qt, &mut qb); }
     }
 }

@@ -9,6 +9,55 @@ pub fn skill_at_points(data: &GameData, base: i32, points: i32) -> Option<&Skill
     data.skill(i).filter(|s| s.name == b.name).or(Some(b))
 }
 
+/// The hero's learned active skills (skill-tree order), each with its learned upgrade passives folded in.
+/// GORoleCB::PassiveSkill(SKILLINFO) applies an upgrade passive to the skill it hangs under (tree `before`): an attr named
+/// `<attr>_time` / `_width` / `_height` / `_prop` changes that field of the skill's `<attr>`, `effect_time` lengthens the
+/// visual effect, `CD_time` changes the cooldown (ms). Other attrs: an attr of the same name has its data added to
+/// (Great Rapid Shot +15% on Rapid Shot's 50%), anything else is added to the skill (Improved Healing Circle's
+/// heal-over-time) — that last split is my reading of the routine, not a line-by-line decode.
+pub fn learned_actives(data: &GameData, oh: &OwnedHero) -> Vec<(Skill, f32)> {
+    let tree = &data.hero(oh.hero).skill_tree;
+    let mut out = vec![];
+    for n in tree {
+        let Some(&p) = oh.skills.get(&n.skill).filter(|&&p| p > 0) else { continue };
+        let Some(base) = skill_at_points(data, n.skill, p).filter(|s| s.kind == SkillKind::Active) else { continue };
+        let mut s = base.clone();
+        let mut cd = s.cd_ms.unwrap_or(10000) as f32;
+        for up in tree.iter().filter(|u| u.before == n.skill) {
+            let Some(&up_p) = oh.skills.get(&up.skill).filter(|&&p| p > 0) else { continue };
+            let Some(us) = skill_at_points(data, up.skill, up_p).filter(|s| s.kind == SkillKind::Passive) else { continue };
+            for a in &us.attrs {
+                let name = format!("{:?}", a.effect);
+                if name.ends_with("Base") || name.starts_with("Resist") { continue; } // self stats, applied in hero_fighter
+                let dv = a.data.unwrap_or(0.0);
+                if a.effect == SkillEffect::CDTime { cd += dv; continue; }
+                if a.effect == SkillEffect::EffectTime { for e in &mut s.effects { if let Some(t) = &mut e.time_ms { if *t > 0 { *t += dv as i32; } } } continue; }
+                let mut done = false;
+                for suf in ["Time", "Width", "Height", "Prop"] {
+                    if let Some(stem) = name.strip_suffix(suf).filter(|st| !st.is_empty()) {
+                        for b in s.attrs.iter_mut().filter(|b| format!("{:?}", b.effect) == stem) {
+                            match suf { "Time" => b.time_ms += dv as i32, "Width" => b.width = Some(b.width.unwrap_or(0.0) + dv),
+                                "Height" => b.height = Some(b.height.unwrap_or(0.0) + dv), _ => b.prop = Some(b.prop.unwrap_or(0.0) + a.prop.or(a.data).unwrap_or(0.0)) }
+                            done = true;
+                        }
+                    }
+                }
+                if done { continue; }
+                if let Some(b) = s.attrs.iter_mut().find(|b| b.effect == a.effect && b.value_kind == a.value_kind) {
+                    b.data = Some(b.data.unwrap_or(0.0) + dv);
+                    if a.prop.is_some() { b.prop = Some(b.prop.unwrap_or(0.0) + a.prop.unwrap_or(0.0)); }
+                } else {
+                    let mut na = a.clone();
+                    if na.target == SkillTarget::Caster && s.attrs.iter().any(|b| b.target != SkillTarget::Caster) { na.target = s.attrs[0].target; na.begin_pos_code = s.attrs[0].begin_pos_code; }
+                    s.attrs.push(na);
+                }
+            }
+        }
+        out.push((s, (cd / 1000.0).max(1.0)));
+    }
+    out
+}
+
 /// [§3] v = isPct ? data/100 : data; if follow_level: v = (L8/8 + 1)·v + base, with L8 = level·8.
 pub fn attr_value(a: &SkillAttr, level: i32) -> f32 {
     let mut v = a.data.unwrap_or(0.0);

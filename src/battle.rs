@@ -33,7 +33,7 @@ pub struct Unit {
     pub roster: Option<usize>, pub slot: usize, pub enemy: i32, pub level: i32,
     pub ranged: bool, pub healer: bool, pub range: f32, pub hatred: i32,
     pub taunted_by: Option<(Entity, f32)>, pub buff: (i32, i32, f32), // (ac, attack, time)
-    pub skill: Option<ActiveSkill>, pub dead: bool, pub dead_t: f32, pub team: usize,
+    pub skills: Vec<ActiveSkill>, pub dead: bool, pub dead_t: f32, pub team: usize,
     pub st: Status,
     /// seconds from attack start to the release/impact frame
     pub hit_t: f32,
@@ -80,14 +80,16 @@ struct TutPanel;
 #[derive(Component)]
 struct CdOverlay(usize);
 #[derive(Component)]
-struct PanelText(usize);
-#[derive(Component)]
 struct PausedOverlay;
+#[derive(Component)]
+struct PauseTick(usize);
 #[derive(Component)]
 struct AutoText;
 /// HeroAttribute trigger_rect half-width 80 (most melee heroes) in 2x coordinates: melee heroes not on auto only engage foes this close
 #[derive(Component)]
-struct SelIcon(String);
+struct SelIcon(usize, String);
+#[derive(Component)]
+struct SkillFrame(usize);
 #[derive(Component)]
 struct BoxSel;
 
@@ -177,12 +179,12 @@ fn order_marks(mut aim: ResMut<AutoAim>, a: Res<AssetServer>, units: Query<(&Uni
     }
 }
 
-fn first_active(data: &GameData, oh: &crate::save::OwnedHero) -> Option<ActiveSkill> {
-    let tree = &data.hero(oh.hero).skill_tree;
-    tree.iter().filter_map(|n| oh.skills.get(&n.skill).filter(|&&p| p > 0).map(|&p| (n, p)))
-        .filter_map(|(n, p)| stats::skill_at_points(data, n.skill, p).filter(|s| s.kind == SkillKind::Active).cloned())
-        .next().map(|s| { let cd = s.cd_ms.unwrap_or(10000) as f32 / 1000.0; ActiveSkill { skill: s, cd: cd.max(1.0), left: 0.0 } })
+/// Every learned active skill of the hero, upgrades folded in (SceneMainGameMachine::ChangeSkillIcon fills one button per
+/// skill of the selected hero, controls 50+i).
+fn hero_actives(data: &GameData, oh: &crate::save::OwnedHero) -> Vec<ActiveSkill> {
+    stats::learned_actives(data, oh).into_iter().take(MAX_SKILLS).map(|(s, cd)| ActiveSkill { skill: s, cd, left: 0.0 }).collect()
 }
+pub const MAX_SKILLS: usize = 4;
 
 /// Self-test hook: HVSM_SKILLS="0,11,5" gives party slot i that skill (level 1 data) with a 3 s cooldown.
 fn test_skill(data: &GameData, slot: usize) -> Option<ActiveSkill> {
@@ -226,40 +228,46 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
         let ranged = is_ranged(h.profession, h.attack_mode);
         let u = Unit { side: Side::Hero, trig: h.trigger_rect.as_ref().map(|r| Vec4::new(r.x, r.y, r.z, r.w)).unwrap_or(Vec4::new(80.0, 80.0, 40.0, 40.0)), f: ft, ex, hp: ft.max_hp, atk_cd: 0.5, target: None, forced: None, move_to: None, roster: Some(r), slot: i, enemy: -1,
             level: oh.level, ranged, healer: h.attack_type == AttackType::Buff, range: if h.attack_type == AttackType::Buff { 330.0 } else if ranged { h.trigger_rect.as_ref().map(|r| r.x * 2.0).unwrap_or(330.0) } else { 70.0 }, hatred: h.hatred,
-            taunted_by: None, buff: (0, 0, 0.0), skill: test_skill(&data, i).or_else(|| first_active(&data, oh)), dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
+            taunted_by: None, buff: (0, 0, 0.0), skills: test_skill(&data, i).map(|s| vec![s]).unwrap_or_else(|| hero_actives(&data, oh)), dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
         let pos = Vec2::new(-330.0 + if ranged { -60.0 } else { 40.0 }, if party.len() > 3 { -30.0 - 62.0 * i as f32 } else { -60.0 - 70.0 * i as f32 });
         let e = spawn_unit_look(&mut cmd, &a, &data, &sheets, &hero_key(&data, oh.hero), pos, u, Some(crate::anim::hero_look(&data, oh.hero, Some(&oh.equip))));
         if i == 0 { cmd.entity(e).insert(Selected); }
         // (the original has no bottom panel: HP bars over heads, the selected hero's skill in the top-left box)
-        if true { continue; }
-        let four = party.len() > 3;
-        let px = if four { -330.0 + 205.0 * i as f32 } else { -300.0 + 250.0 * i as f32 };
-        let t = text(&mut cmd, &f, "", Vec2::new(px - 30.0, -292.0), 16.0, Color::WHITE, 60.0);
-        cmd.entity(t).insert(PanelText(i));
-        let icon = oh.skills.keys().next().and(first_active(&data, oh)).map(|s| format!("icons/{}.png", s.skill.icon))
-            .filter(|p| crate::data::asset_exists(p)).unwrap_or("ui/item.png".into());
-        let bp = Vec2::new(px + 85.0, -282.0);
-        button(&mut cmd, &a, &icon, None, bp, Vec2::splat(56.0), 60.0, Act::Custom(10, i as i32));
-        let mut ov = Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.65), Vec2::splat(56.0));
-        ov.custom_size = Some(Vec2::new(56.0, 0.0));
-        cmd.spawn((ov, Transform::from_translation(bp.extend(61.0)), Scr, CdOverlay(i)));
-        text(&mut cmd, &f, ["Q", "W", "E", "R"][i.min(3)], bp + Vec2::new(22.0, -20.0), 16.0, Color::srgb(1.0, 0.9, 0.3), 62.0);
     }
     // pause (top-right) and portrait box (top-left)
     button(&mut cmd, &a, "ui/paused.png", Some("ui/paused_1.png"), Vec2::new(440.0, 280.0), Vec2::new(64.0, 70.0), 60.0, Act::Custom(11, 0));
     // top-left box: the selected hero's skill (StateHelpGame: "Tap on the heal skill icon in the upper left"), tap to cast
-    image(&mut cmd, &a, "ui/item.png", Vec2::new(-430.0, 270.0), Some(Vec2::splat(86.0)), 60.0);
-    let si = button(&mut cmd, &a, "ui/item.png", None, Vec2::new(-430.0, 270.0), Vec2::splat(66.0), 60.5, Act::Custom(12, 0));
-    cmd.entity(si).insert(SelIcon(String::new()));
-    let mut ov = Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.65), Vec2::splat(66.0)); ov.custom_size = Some(Vec2::new(66.0, 0.0));
-    cmd.spawn((ov, Transform::from_xyz(-430.0, 270.0, 61.0), Scr, CdOverlay(usize::MAX)));
+    // one box per learned active skill of the selected hero, left to right
+    for k in 0..MAX_SKILLS {
+        let p = Vec2::new(-430.0 + 88.0 * k as f32, 270.0);
+        let fr = image(&mut cmd, &a, "ui/item.png", p, Some(Vec2::splat(86.0)), 60.0);
+        cmd.entity(fr).insert(SkillFrame(k));
+        let si = button(&mut cmd, &a, "ui/item.png", None, p, Vec2::splat(66.0), 60.5, Act::Custom(12, k as i32));
+        cmd.entity(si).insert(SelIcon(k, String::new()));
+        let mut ov = Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.65), Vec2::splat(66.0)); ov.custom_size = Some(Vec2::new(66.0, 0.0));
+        cmd.spawn((ov, Transform::from_translation(p.extend(61.0)), Scr, CdOverlay(k), SkillFrame(k)));
+    }
     // battle speed 1×/2×/3× (own addition; remembered in the save), styled as an item frame like the skill box
     image(&mut cmd, &a, "ui/item.png", Vec2::new(360.0, 280.0), Some(Vec2::splat(64.0)), 60.0);
     hotspot(&mut cmd, Vec2::new(360.0, 280.0), Vec2::splat(64.0), 60.5, Act::Custom(13, 0));
     let sp = text(&mut cmd, &f, format!("x{}", save.battle_speed.max(1)), Vec2::new(360.0, 280.0), 26.0, Color::srgb(1.0, 0.85, 0.3), 61.0);
     cmd.entity(sp).insert(AutoText);
-    let mut po = Sprite::from_image(a.load("ui/gamepaused.png")); po.color = Color::WHITE;
-    cmd.spawn((po, Transform::from_xyz(0.0, 40.0, 80.0), Visibility::Hidden, Scr, PausedOverlay));
+    // StateMainGamePause: gamepaused title, music / sound tick boxes, RESUME and RETREAT (CampChallenge::RetreatChallenge)
+    let po = cmd.spawn((Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.6), SCREEN * 1.3), Transform::from_xyz(0.0, 0.0, 80.0), Visibility::Hidden, Scr, PausedOverlay)).id();
+    let mut kids = vec![image(&mut cmd, &a, "ui/gamepaused.png", Vec2::new(0.0, 170.0), None, 1.0)];
+    kids.push(button(&mut cmd, &a, "ui/RESUME.png", Some("ui/RESUME_1.png"), Vec2::new(0.0, 70.0), Vec2::new(254.0, 84.0), 1.0, Act::Custom(14, 0)));
+    kids.push(button(&mut cmd, &a, "ui/RETREAT.png", Some("ui/RETREAT_1.png"), Vec2::new(0.0, -20.0), Vec2::new(254.0, 84.0), 1.0, Act::Custom(15, 0)));
+    // music (116 px wide) and sound fx (186 px) captions, each followed by its tick box
+    for (i, (lbl, on, x, w)) in [("ui/music.png", save.music, -250.0, 116.0), ("ui/sound.png", save.sound, 40.0, 186.0)].into_iter().enumerate() {
+        kids.push(image(&mut cmd, &a, lbl, Vec2::new(x + w / 2.0, -120.0), None, 1.0));
+        let tx = x + w + 45.0;
+        kids.push(button(&mut cmd, &a, "ui/tick_BG.png", None, Vec2::new(tx, -120.0), Vec2::new(50.0, 52.0), 1.0, Act::Custom(16, i as i32)));
+        let t = image(&mut cmd, &a, "ui/tick.png", Vec2::new(tx + 4.0, -116.0), None, 1.5);
+        cmd.entity(t).insert((PauseTick(i), if on { Visibility::Inherited } else { Visibility::Hidden }));
+        kids.push(t);
+    }
+    if !setup.tutorial { kids.push(text(&mut cmd, &f, "Retreat: leave this battle with no rewards", Vec2::new(0.0, -190.0), 18.0, Color::srgb(1.0, 0.9, 0.7), 1.0)); }
+    for k in kids { cmd.entity(po).add_child(k); }
     if !setup.tutorial { // the tutorial has its own instruction panel there
         let wi = image(&mut cmd, &a, "ui/Wave_Incoming.png", Vec2::new(0.0, 160.0), None, 70.0);
         cmd.entity(wi).insert(Floating(-2.0));
@@ -276,7 +284,7 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
                 let ranged = is_ranged(en.profession, en.attack_mode);
                 let u = Unit { side: Side::Enemy, trig: Vec4::ZERO, f: ft, ex: Default::default(), hp: ft.max_hp, atk_cd: 1.0, target: None, forced: None, move_to: None, roster: None, slot: i, enemy: id,
                     level: lv, ranged, healer: en.attack_type == AttackType::Buff, range: if ranged { 300.0 } else { 70.0 }, hatred: en.hatred,
-                    taunted_by: None, buff: (0, 0, 0.0), skill: None, dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
+                    taunted_by: None, buff: (0, 0, 0.0), skills: vec![], dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
                 let p = if boss { Vec2::new(330.0, -80.0) } else { Vec2::new(220.0 + (i % 2) as f32 * 90.0, 20.0 - i as f32 * 70.0) };
                 let e = spawn_unit(&mut cmd, &a, &data, &sheets, &enemy_key(&data, id), p, u);
                 if boss { cmd.entity(e).insert(Transform::from_translation(p.extend(10.0)).with_scale(Vec3::splat(1.25))); }
@@ -289,7 +297,7 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
         let ft = build_fighter(&en.stats, &en.formulas, lv.max(1), (1, 3));
         let ranged = is_ranged(en.profession, en.attack_mode);
         let u = Unit { side: Side::Hero, trig: Vec4::ZERO, f: ft, ex: Default::default(), hp: ft.max_hp, atk_cd: 0.5, target: None, forced: None, move_to: None, roster: None, slot: 98, enemy: id,
-            level: lv, ranged, healer: false, range: if ranged { 300.0 } else { 70.0 }, hatred: en.hatred, taunted_by: None, buff: (0, 0, 0.0), skill: None,
+            level: lv, ranged, healer: false, range: if ranged { 300.0 } else { 70.0 }, hatred: en.hatred, taunted_by: None, buff: (0, 0, 0.0), skills: vec![],
             dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
         spawn_unit(&mut cmd, &a, &data, &sheets, &enemy_key(&data, id), Vec2::new(-250.0, 40.0), u);
     }
@@ -303,7 +311,7 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
                 let ranged = is_ranged(h.profession, h.attack_mode);
                 let u = Unit { side: Side::Enemy, trig: Vec4::ZERO, f: ft, ex: Default::default(), hp: ft.max_hp, atk_cd: 1.0, target: None, forced: None, move_to: None, roster: None, slot: i, enemy: -1,
                     level: lv, ranged, healer: h.attack_type == AttackType::Buff, range: if ranged { 330.0 } else { 70.0 }, hatred: h.hatred,
-                    taunted_by: None, buff: (0, 0, 0.0), skill: None, dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
+                    taunted_by: None, buff: (0, 0, 0.0), skills: vec![], dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
                 let p = Vec2::new(300.0 + (i % 2) as f32 * 80.0, -40.0 - i as f32 * 50.0);
                 let e = spawn_unit(&mut cmd, &a, &data, &sheets, &hero_key(&data, hi), p, u);
                 let n = text(&mut cmd, &f, &h.class_name, Vec2::new(0.0, 150.0), 13.0, Color::srgb(1.0, 0.75, 0.6), 5.2);
@@ -364,7 +372,7 @@ fn director(mut cmd: Commands, a: Res<AssetServer>, time: Res<Time>, data: Res<G
         let y = rng.f32() * (FIELD_MAX.y - FIELD_MIN.y - 40.0) + FIELD_MIN.y + 20.0;
         let u = Unit { side: Side::Enemy, trig: Vec4::ZERO, f: ft, ex: Default::default(), hp: ft.max_hp, atk_cd: 1.0, target: None, forced: None, move_to: None, roster: None, slot: 0, enemy: id,
             level: lvl, ranged, healer: e.attack_type == AttackType::Buff, range: if ranged { 300.0 } else { 70.0 }, hatred: e.hatred,
-            taunted_by: None, buff: (0, 0, 0.0), skill: None, dead: false, dead_t: 0.0, team: run.team, st: Status::default(), hit_t: 0.5 };
+            taunted_by: None, buff: (0, 0, 0.0), skills: vec![], dead: false, dead_t: 0.0, team: run.team, st: Status::default(), hit_t: 0.5 };
         // Survival BOSS teams: 10% of enemies get x negated (they enter from the left)
         let x = if s.x < 0 { -520.0 } else { 520.0 };
         spawn_unit(&mut cmd, &a, &data, &sheets, &enemy_key(&data, id), Vec2::new(x, y), u);
@@ -398,16 +406,24 @@ fn hit_test(p: Vec2, t: &Transform) -> bool { let c = t.translation.truncate() +
 fn input(mut cmd: Commands, keys: Res<ButtonInput<KeyCode>>, mouse: Res<ButtonInput<MouseButton>>, cur: Res<Cursor>, mut run: ResMut<Run>,
          mut clicked: ResMut<Clicked>, mut vt: ResMut<Time<Virtual>>, mut next: ResMut<NextState<AppState>>,
          mut units: Query<(Entity, &mut Unit, &Transform)>, sel: Query<Entity, With<Selected>>, hots: Query<(Entity, &Hot, &GlobalTransform, &InheritedVisibility)>,
-         mut boxq: Query<(&mut Sprite, &mut Transform), (With<BoxSel>, Without<Unit>)>, mut ov: Query<&mut Visibility, With<PausedOverlay>>, mut casts: Local<Vec<usize>>,
-         (mut sfx, mut save): (ResMut<crate::audio::Sfx>, ResMut<Save>), mut viz: Query<(&DragViz, &mut Sprite, &mut Transform, &mut Visibility), (Without<Unit>, Without<BoxSel>, Without<PausedOverlay>)>) {
+         mut boxq: Query<(&mut Sprite, &mut Transform), (With<BoxSel>, Without<Unit>)>, mut ov: Query<&mut Visibility, With<PausedOverlay>>, mut casts: Local<Vec<(usize, usize)>>,
+         (mut sfx, mut save, ticks): (ResMut<crate::audio::Sfx>, ResMut<Save>, Query<(&PauseTick, Entity)>), mut viz: Query<(&DragViz, &mut Sprite, &mut Transform, &mut Visibility), (Without<Unit>, Without<BoxSel>, Without<PausedOverlay>)>) {
     if run.outro.is_some() { return; }
     let mut toggle_pause = keys.just_pressed(KeyCode::KeyP);
     let mut speed_up = keys.just_pressed(KeyCode::KeyF);
     for act in clicked.0.drain(..) {
         match act {
-            Act::Custom(10, i) => casts.push(i as usize), Act::Custom(11, _) => toggle_pause = true,
-            Act::Custom(12, _) => if let Some((_, u, _)) = sel.iter().next().and_then(|e| units.get(e).ok()) { casts.push(u.slot); },
+            Act::Custom(11, _) => toggle_pause = true,
+            Act::Custom(12, k) => if let Some((_, u, _)) = sel.iter().next().and_then(|e| units.get(e).ok()) { casts.push((u.slot, k as usize)); },
             Act::Custom(13, _) => speed_up = true,
+            Act::Custom(14, _) => if vt.is_paused() { toggle_pause = true; },
+            Act::Custom(15, _) => if vt.is_paused() { vt.unpause(); sfx.play("sfx_select"); next.set(AppState::WorldMap); return; },
+            Act::Custom(16, i) => {
+                if i == 0 { save.music = !save.music } else { save.sound = !save.sound }
+                save.write();
+                let on = if i == 0 { save.music } else { save.sound };
+                for (t, e) in ticks.iter() { if t.0 == i as usize { cmd.entity(e).insert(if on { Visibility::Inherited } else { Visibility::Hidden }); } }
+            }
             _ => {}
         }
     }
@@ -418,7 +434,10 @@ fn input(mut cmd: Commands, keys: Res<ButtonInput<KeyCode>>, mouse: Res<ButtonIn
     if keys.just_pressed(KeyCode::Escape) { next.set(AppState::WorldMap); return; }
     if keys.just_pressed(KeyCode::F5) { next.set(AppState::Battle); return; }
     if keys.just_pressed(KeyCode::KeyA) { run.auto = !run.auto; }
-    for (k, i) in [(KeyCode::KeyQ, 0), (KeyCode::KeyW, 1), (KeyCode::KeyE, 2), (KeyCode::KeyR, 3)] { if keys.just_pressed(k) { casts.push(i); } }
+    // Q/W/E/R: the selected hero's skills 1-4
+    for (k, i) in [(KeyCode::KeyQ, 0), (KeyCode::KeyW, 1), (KeyCode::KeyE, 2), (KeyCode::KeyR, 3)] {
+        if keys.just_pressed(k) { if let Some((_, u, _)) = sel.iter().next().and_then(|e| units.get(e).ok()) { casts.push((u.slot, i)); } }
+    }
     for (k, i) in [(KeyCode::Digit1, 0), (KeyCode::Digit2, 1), (KeyCode::Digit3, 2), (KeyCode::Digit4, 3)] {
         if keys.just_pressed(k) {
             for e in sel.iter() { cmd.entity(e).remove::<Selected>(); }
@@ -426,9 +445,9 @@ fn input(mut cmd: Commands, keys: Res<ButtonInput<KeyCode>>, mouse: Res<ButtonIn
         }
     }
     // skill casts are queued into the units' `skill.left` = -1 marker, executed by `ai`
-    for i in casts.drain(..) {
+    for (i, k) in casts.drain(..) {
         if let Some((_, mut u, _)) = units.iter_mut().find(|(_, u, _)| u.side == Side::Hero && u.slot == i && !u.dead) {
-            if let Some(s) = &mut u.skill { if s.left <= 0.0 { s.left = -1.0; } }
+            if let Some(s) = u.skills.get_mut(k) { if s.left <= 0.0 { s.left = -1.0; } }
         }
     }
     if vt.is_paused() { return; }
@@ -583,23 +602,23 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
         if u.st.life > 0.0 { u.st.life -= dt; if u.st.life <= 0.0 { u.hp = 0.0; } }
         if u.st.stun > 0.0 {
             u.st.stun -= dt;
-            if let Some(s) = &mut u.skill { if s.left > 0.0 { s.left -= dt; } }
+            for s in &mut u.skills { if s.left > 0.0 { s.left -= dt; } }
             play(&mut anims, anim, Row::Hurt, false, None);
             continue;
         }
         let pos = t.translation.truncate();
         let alive = |x: Entity| snapshot.iter().find(|s| s.0 == x && !s.3).map(|s| s.2);
         // ----- skill -----
-        let mut cast_now = false;
+        let mut cast_idx = None;
         // Skills fire only when the player taps them (the -1 marker set by `input`). The original's auto-battle flag
         // (DungeonHeroesCpp+0xf71) is only read by AIManager/GOHero target picking, never by skill code.
-        if let Some(s) = &mut u.skill {
+        for (k, s) in u.skills.iter_mut().enumerate() {
             if s.left > 0.0 { s.left = (s.left - dt).max(0.0); }
-            else if s.left < 0.0 { cast_now = true; s.left = s.cd; }
+            else if s.left < 0.0 && cast_idx.is_none() { cast_idx = Some(k); s.left = s.cd; }
         }
-        if cast_now {
-            let s = u.skill.as_ref().unwrap().skill.clone();
-            if std::env::var("HVSM_SKILLS").is_ok() { eprintln!("SKILLTEST cast slot{} {} attrs={}", u.slot, s.name, s.attrs.len()); }
+        if let Some(k) = cast_idx {
+            let s = u.skills[k].skill.clone();
+            if std::env::var("HVSM_SKILLS").is_ok() || std::env::var("HVSM_CASTLOG").is_ok() { eprintln!("SKILLTEST cast slot{} {} attrs={} cd={:.1}", u.slot, s.name, s.attrs.len(), u.skills[k].cd); }
             play(&mut anims, anim, Row::Skill, true, None);
             let snd = s.effects.iter().map(|v| v.begin_sound.trim()).find(|n| !n.is_empty()).map(|n| n.trim_end_matches(".wav").to_string());
             sfx.play(match snd.as_deref() { Some("sfx_rage") => "sfx_rage", Some("sfx_heal") => "sfx_heal", Some("sfx_holyheal") => "sfx_holyheal", Some("sfx_shoot") => "sfx_shoot", _ => "sfx_skillstart" });
@@ -756,11 +775,14 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
         if let Some(m) = u.move_to {
             let d = m - pos;
             if d.length() < 6.0 { u.move_to = None; play(&mut anims, anim, Row::Standby, false, None); }
-            else { t.translation += (d.normalize() * (speed * dt).min(d.length())).extend(0.0); play(&mut anims, anim, Row::Move, false, Some(d.x < 0.0)); }
+            else if !anim.and_then(|c| anims.get(c).ok()).map(|a| a.once && !a.done).unwrap_or(false) {
+                t.translation += (d.normalize() * (speed * dt).min(d.length())).extend(0.0); play(&mut anims, anim, Row::Move, false, Some(d.x < 0.0));
+            }
             continue;
         }
         let Some(te) = tgt else {
-            if u.side == Side::Enemy { t.translation.x -= speed * dt; play(&mut anims, anim, Row::Move, false, Some(true)); } else { play(&mut anims, anim, Row::Standby, false, None); }
+            let busy = anim.and_then(|c| anims.get(c).ok()).map(|a| a.once && !a.done).unwrap_or(false);
+            if busy {} else if u.side == Side::Enemy { t.translation.x -= speed * dt; play(&mut anims, anim, Row::Move, false, Some(true)); } else { play(&mut anims, anim, Row::Standby, false, None); }
             continue;
         };
         let tp = alive(te).unwrap_or(pos);
@@ -770,12 +792,16 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
         // a locked unit walks to its lock (GORoleCB::MoveToLockObj), heroes included
         // GORoleCB::OnUpdate only calls MoveToLockObj when AttackMode (+0x184) is 0 (near); far and buff units
         // fire from where they stand whatever the distance
+        // a unit stands still until its attack / skill animation has finished (GORoleCB only moves in the move state)
+        let busy = anim.and_then(|c| anims.get(c).ok()).map(|a| a.once && !a.done).unwrap_or(false);
         if !u.ranged && !u.healer && d.length() > u.range {
             // melee approach to the side of the target; ranged walk until in range
-            let goal = if u.ranged { tp } else { tp + Vec2::new(if d.x > 0.0 { -50.0 } else { 50.0 }, 0.0) };
-            let g = goal - pos;
-            if g.length() > 2.0 { t.translation += (g.normalize() * (speed * dt).min(g.length())).extend(0.0); }
-            play(&mut anims, anim, Row::Move, false, face);
+            if !busy {
+                let goal = if u.ranged { tp } else { tp + Vec2::new(if d.x > 0.0 { -50.0 } else { 50.0 }, 0.0) };
+                let g = goal - pos;
+                if g.length() > 2.0 { t.translation += (g.normalize() * (speed * dt).min(g.length())).extend(0.0); }
+                play(&mut anims, anim, Row::Move, false, face);
+            }
         } else if u.atk_cd <= 0.0 {
             u.atk_cd = (u.f.attack_interval * (1.0 + u.st.aspd.0)).max(0.4);
             play(&mut anims, anim, Row::Attack, true, face);
@@ -809,12 +835,14 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
     }
     // separation + bounds
     let pos: Vec<(Entity, Vec2, bool)> = q.iter().map(|(e, u, t, _)| (e, t.translation.truncate(), u.dead)).collect();
-    for (e, u, mut t, _) in q.iter_mut() {
+    for (e, u, mut t, ch) in q.iter_mut() {
         if u.dead { continue; }
         let p = t.translation.truncate();
         let mut push = Vec2::ZERO;
+        // no sliding while an attack / skill animation plays
+        let busy = ch.iter().find_map(|c| anims.get(c).ok()).map(|a| a.once && !a.done).unwrap_or(false);
         for (o, op, od) in &pos { if *o != e && !od { let d = p - *op; let l = d.length(); if l < 36.0 && l > 0.01 { push += d / l * (36.0 - l); } } }
-        let mut np = p + push * 0.2;
+        let mut np = if busy { p } else { p + push * 0.2 };
         let minx = if u.side == Side::Enemy { FIELD_MIN.x } else { FIELD_MIN.x };
         let maxx = if u.side == Side::Enemy { 560.0 } else { FIELD_MAX.x };
         np = np.clamp(Vec2::new(minx, FIELD_MIN.y), Vec2::new(maxx, FIELD_MAX.y));
@@ -845,7 +873,7 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
             "hpmax" | "hpmax%" => { if u.st.hpmax.1 > 0.0 { u.f.max_hp -= u.st.hpmax.0; }
                 let b = if kind == "hpmax%" { u.f.max_hp * v } else { v }; u.f.max_hp += b; u.hp = (u.hp + b.max(0.0)).min(u.f.max_hp); u.st.hpmax = (b, t); }
             "immune" => u.st.immune = t,
-            "skillcd" => { if let Some(s) = &mut u.skill { s.left = (s.left * (1.0 + v)).max(0.0); } }
+            "skillcd" => { for s in &mut u.skills { s.left = (s.left * (1.0 + v)).max(0.0); } }
             "firearrow" => { let (w, h) = fire_box.iter().find(|x| x.0 == te).map(|x| (x.1, x.2)).unwrap_or((180.0, 120.0)); u.st.fire_arrow = (v, w, h, t); }
             "dispel" => { u.st.stun = 0.0; u.st.dot = (0.0, 0.0); }
             _ => {}
@@ -866,7 +894,7 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
         let ft = build_fighter(&en.stats, &en.formulas, lvl.max(1), (1, 3));
         let ranged = is_ranged(en.profession, en.attack_mode);
         let u = Unit { side: Side::Hero, trig: Vec4::ZERO, f: ft, ex: Default::default(), hp: ft.max_hp, atk_cd: 0.5, target: None, forced: None, move_to: None, roster: None, slot: 99, enemy: id,
-            level: lvl, ranged, healer: false, range: if ranged { 300.0 } else { 70.0 }, hatred: en.hatred, taunted_by: None, buff: (0, 0, 0.0), skill: None,
+            level: lvl, ranged, healer: false, range: if ranged { 300.0 } else { 70.0 }, hatred: en.hatred, taunted_by: None, buff: (0, 0, 0.0), skills: vec![],
             dead: false, dead_t: 0.0, team: 0, st: Status { life, ..default() }, hit_t: 0.5 };
         if std::env::var("HVSM_SKILLS").is_ok() { eprintln!("SKILLTEST summon enemy#{id} life={life:.0} live_before={}", live.len()); }
         spawn_unit(&mut cmd, &a, &data, &sheets, &enemy_key(&data, id), p.clamp(FIELD_MIN, FIELD_MAX), u);
@@ -968,27 +996,21 @@ fn effects(mut cmd: Commands, time: Res<Time>, mut fl: Query<(Entity, &mut Float
 }
 
 #[allow(clippy::too_many_arguments)]
-fn hud(data: Res<GameData>, run: Res<Run>, units: Query<&Unit>, mut pt: Query<(&PanelText, &mut Text2d), Without<AutoText>>, mut ov: Query<(&CdOverlay, &mut Sprite), Without<SelIcon>>,
-       mut at: Query<&mut Text2d, With<AutoText>>, save: Res<Save>, sel: Query<&Unit, With<Selected>>, mut icon: Query<(&mut SelIcon, &mut Sprite), Without<CdOverlay>>, a: Res<AssetServer>) {
+fn hud(run: Res<Run>, mut ov: Query<(&CdOverlay, &mut Sprite), Without<SelIcon>>,
+       mut at: Query<&mut Text2d, With<AutoText>>, save: Res<Save>, sel: Query<&Unit, With<Selected>>, mut icon: Query<(&mut SelIcon, &mut Sprite), Without<CdOverlay>>,
+       mut frames: Query<(&SkillFrame, &mut Visibility)>, a: Res<AssetServer>) {
     let _ = &run;
     let su = sel.iter().next().filter(|u| u.side == Side::Hero);
-    if let (Some(u), Ok((mut si, mut sp))) = (su, icon.single_mut()) {
-        let p = u.skill.as_ref().map(|s| format!("icons/{}.png", s.skill.icon)).filter(|p| crate::data::asset_exists(p)).unwrap_or("ui/item.png".into());
-        if si.0 != p { sp.image = a.load(&p); si.0 = p; }
+    let n = su.map(|u| u.skills.len()).unwrap_or(0);
+    for (mut si, mut sp) in icon.iter_mut() {
+        let p = su.and_then(|u| u.skills.get(si.0)).map(|s| format!("icons/{}.png", s.skill.icon)).filter(|p| crate::data::asset_exists(p)).unwrap_or("ui/item.png".into());
+        if si.1 != p { sp.image = a.load(&p); si.1 = p; }
+        sp.color = if si.0 < n.max(1) { Color::WHITE } else { Color::NONE };
     }
-    for (p, mut t) in pt.iter_mut() {
-        if let Some(u) = units.iter().find(|u| u.side == Side::Hero && u.slot == p.0) {
-            let name = u.roster.map(|r| data.hero(save.heroes[r].hero).class_name.clone()).unwrap_or_default();
-            t.0 = format!("{} Lv{}\nHP {:.0}/{:.0}", name, u.level, u.hp.max(0.0), u.f.max_hp);
-        }
-    }
+    for (fr, mut v) in frames.iter_mut() { let want = if fr.0 < n.max(1) { Visibility::Inherited } else { Visibility::Hidden }; if *v != want { *v = want; } }
     for (c, mut s) in ov.iter_mut() {
-        if c.0 == usize::MAX {
-            let r = su.map(|u| if u.dead { 1.0 } else { u.skill.as_ref().map(|s| (s.left / s.cd).clamp(0.0, 1.0)).unwrap_or(1.0) }).unwrap_or(1.0);
-            s.custom_size = Some(Vec2::new(66.0, 66.0 * r)); continue;
-        }
-        let r = units.iter().find(|u| u.side == Side::Hero && u.slot == c.0).map(|u| if u.dead { 1.0 } else { u.skill.as_ref().map(|s| (s.left / s.cd).clamp(0.0, 1.0)).unwrap_or(1.0) }).unwrap_or(1.0);
-        s.custom_size = Some(Vec2::new(56.0, 56.0 * r));
+        let r = su.map(|u| if u.dead { 1.0 } else { u.skills.get(c.0).map(|s| (s.left / s.cd).clamp(0.0, 1.0)).unwrap_or(1.0) }).unwrap_or(1.0);
+        s.custom_size = Some(Vec2::new(66.0, 66.0 * r));
     }
     if let Ok(mut t) = at.single_mut() { let s = format!("x{}", save.battle_speed.clamp(1, 3)); if t.0 != s { t.0 = s; } }
 }
@@ -1122,11 +1144,11 @@ fn tutorial(mut cmd: Commands, a: Res<AssetServer>, data: Res<GameData>, sheets:
         let ft = build_fighter(&e.stats, &e.formulas, 1, (1, 3));
         let ranged = is_ranged(e.profession, e.attack_mode);
         let u = Unit { side: Side::Enemy, trig: Vec4::ZERO, f: ft, ex: Default::default(), hp: ft.max_hp, atk_cd: 1.0, target, forced: target, move_to: walk, roster: None, slot: 0, enemy: foe_id,
-            level: 1, ranged, healer: false, range: if ranged { 300.0 } else { 70.0 }, hatred: e.hatred, taunted_by: None, buff: (0, 0, 0.0), skill: None,
+            level: 1, ranged, healer: false, range: if ranged { 300.0 } else { 70.0 }, hatred: e.hatred, taunted_by: None, buff: (0, 0, 0.0), skills: vec![],
             dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
         spawn_unit(cmd, &a, &data, &sheets, &enemy_key(&data, foe_id), pos, u);
     };
-    let get = |q: &Query<(Entity, &mut Unit, &Transform)>, e: Entity| q.get(e).ok().map(|(_, u, _)| (u.forced, u.move_to, u.skill.as_ref().map(|s| s.left)));
+    let get = |q: &Query<(Entity, &mut Unit, &Transform)>, e: Entity| q.get(e).ok().map(|(_, u, _)| (u.forced, u.move_to, u.skills.first().map(|s| s.left)));
     let step = run.tut;
     let next = match step {
         0 => get(&q, w).is_some_and(|x| x.1.is_some()) || cl.is_some_and(|c| get(&q, c.0).is_some_and(|x| x.1.is_some())),
@@ -1148,7 +1170,7 @@ fn tutorial(mut cmd: Commands, a: Res<AssetServer>, data: Res<GameData>, sheets:
             1 => { let p = cl.map(|c| c.1).unwrap_or(Vec2::new(-300.0, -120.0)); spawn(&mut cmd, Vec2::new(540.0, p.y), cl.map(|c| c.0), None); }
             2 => if let Ok((_, mut u, _)) = q.get_mut(w) { u.hp = u.hp.min(u.f.max_hp * 0.55); },
             3 => if let Some(c) = cl { if let Ok((_, mut u, _)) = q.get_mut(c.0) { u.hp = u.hp.min(u.f.max_hp * 0.5); u.forced = None; } },
-            4 => if let Some(c) = cl { if let Ok((_, mut u, _)) = q.get_mut(c.0) { if let Some(s) = &mut u.skill { s.left = 0.0; } } },
+            4 => if let Some(c) = cl { if let Ok((_, mut u, _)) = q.get_mut(c.0) { if let Some(s) = u.skills.first_mut() { s.left = 0.0; } } },
             6 => { spawn(&mut cmd, Vec2::new(540.0, -13.0), None, Some(Vec2::new(150.0, -13.0))); spawn(&mut cmd, Vec2::new(580.0, -150.0), None, Some(Vec2::new(200.0, -150.0))); }
             9 => { run.done = true; run.won = true; run.money = 1000; run.exp = 100; }
             _ => {}

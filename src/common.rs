@@ -40,10 +40,10 @@ pub struct DescBody;
 pub fn desc_box(cmd: &mut Commands, a: &AssetServer, f: &Fonts, center: Vec2) {
     image(cmd, a, "ui/description.png", center, None, 5.0);
     let t = text(cmd, f, "", center + Vec2::new(-340.0, 50.0), 24.0, Color::srgb(1.0, 0.92, 0.7), 6.0);
-    cmd.entity(t).insert((DescTitle, bevy::sprite::Anchor::TOP_LEFT));
+    cmd.entity(t).insert((DescTitle, bevy::sprite::Anchor::TOP_LEFT, FitBox { max_w: 680.0, max_h: 30.0, base: 24.0, min: 14.0 }));
     let b = cmd.spawn((Text2d::new(""), TextFont { font: f.main.clone().into(), font_size: bevy::text::FontSize::Px(18.0), ..default() },
         TextColor(Color::srgb(0.25, 0.15, 0.05)), bevy::text::TextBounds::new_horizontal(680.0), bevy::sprite::Anchor::TOP_LEFT,
-        Transform::from_translation((center + Vec2::new(-340.0, 16.0)).extend(6.0)), Scr, DescBody)).id();
+        Transform::from_translation((center + Vec2::new(-340.0, 16.0)).extend(6.0)), Scr, DescBody, FitBox { max_w: 682.0, max_h: 86.0, base: 18.0, min: 9.0 })).id();
     let _ = b;
 }
 
@@ -98,22 +98,26 @@ pub fn item_stat_lines(data: &GameData, id: i32) -> Vec<String> {
 pub fn item_desc(data: &GameData, id: i32) -> (String, String) {
     let Some(e) = data.item(id) else { return (String::new(), String::new()) };
     let intro = e.intro.replace("\\n", " ").replace("\n", " ").replace("¡¯", "'").split_whitespace().collect::<Vec<_>>().join(" ");
+    // the <+8 damage> tags repeat the stat line above, so they are dropped from the flavour text
+    let mut intro2 = String::new(); let mut depth = 0;
+    for ch in intro.chars() { match ch { '<' => depth += 1, '>' if depth > 0 => depth -= 1, _ if depth == 0 => intro2.push(ch), _ => {} } }
+    let intro = intro2.split_whitespace().collect::<Vec<_>>().join(" ");
     let stats = item_stat_lines(data, id).join("   ·   ");
     (format!("{}   (Price: {})", e.name.trim(), e.price),
      if stats.is_empty() { intro } else { format!("{stats}\n{intro}") })
 }
 
-/// Shrinks the description body's font until its (estimated) wrapped height fits the box, so nothing is cut off.
-pub fn fit_desc(mut q: Query<(&Text2d, &mut TextFont, Option<&bevy::text::TextBounds>), (With<DescBody>, Changed<Text2d>)>) {
-    for (t, mut f, b) in &mut q {
-        let w = b.and_then(|b| b.width).unwrap_or(680.0);
-        let mut size = 18.0f32;
-        while size > 10.0 {
-            let lines: f32 = t.0.lines().map(|l| ((l.chars().count() as f32 * size * 0.66) / w).ceil().max(1.0)).sum();
-            if lines * size * 1.3 <= 92.0 { break; }
-            size -= 1.0;
-        }
-        f.font_size = bevy::text::FontSize::Px(size);
+/// Text that must stay inside a box: the font shrinks a pixel per frame while the *measured* layout (TextLayoutInfo) is
+/// larger than the box, and resets to `base` whenever the text changes, so nothing is ever cut off.
+#[derive(Component, Clone, Copy)]
+pub struct FitBox { pub max_w: f32, pub max_h: f32, pub base: f32, pub min: f32 }
+pub fn fit_desc(mut q: Query<(Ref<Text2d>, &mut TextFont, &bevy::text::TextLayoutInfo, &FitBox)>) {
+    for (t, mut f, info, fb) in &mut q {
+        let cur = if let bevy::text::FontSize::Px(v) = f.font_size { v } else { fb.base };
+        if t.is_changed() { if cur != fb.base { f.font_size = bevy::text::FontSize::Px(fb.base); } continue; }
+        let sz = info.size / info.scale_factor.max(0.01);
+        if sz == Vec2::ZERO { continue; }
+        if (sz.y > fb.max_h + 0.5 || sz.x > fb.max_w + 0.5) && cur > fb.min { f.font_size = bevy::text::FontSize::Px(cur - 1.0); }
     }
 }
 

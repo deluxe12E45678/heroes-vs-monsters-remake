@@ -73,8 +73,15 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
                     let mut body = d.introduction.replace("\\n", "\n").replace("[NOW]", "").replace("[NEXT]", "\nNext rank: ");
                     if let Some(cd) = d.cd_ms.filter(|&c| c > 0) { body += &format!("\nCooldown {:.0}s", cd as f32 / 1000.0); }
                     if n.need_had_points > 0 { body += &format!("  Requires {} points spent", n.need_had_points); }
-                    body += "   (click again to learn)";
-                    set_desc(format!("{}  {}/{}  {}", d.name, pts, n.max_points, if d.kind == crate::types::SkillKind::Active { "Active" } else { "Passive" }), body, &mut qt, &mut qb);
+                    let parent = data.skill(n.before).filter(|p| p.kind == crate::types::SkillKind::Active && d.kind == crate::types::SkillKind::Passive);
+                    body += match (d.kind, parent) {
+                        (crate::types::SkillKind::Active, _) => "\nActive: shows in the battle skill bar (top-left) once learned; tap it to cast.",
+                        (_, Some(_)) => "\nUpgrade: improves its skill automatically, no button.",
+                        _ => "\nPassive: always on.",
+                    };
+                    body += "  Tap again to learn.";
+                    let kind = match parent { Some(p) => format!("Upgrade of {}", p.name), None if d.kind == crate::types::SkillKind::Active => "Active".into(), None => "Passive".into() };
+                    set_desc(format!("{}  {}/{}  {}", d.name, pts, n.max_points, kind), body, &mut qt, &mut qb);
                 }
             }
             _ => {}
@@ -83,6 +90,9 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     if !rb.0 { return; }
     rb.0 = false;
+    if sk.0.is_none() {
+        set_desc("Skills", "Tap a skill to read it, tap it again to spend a point (1 point per level).\nActive skills appear in the battle skill bar (top-left); passives and upgrades work on their own.", &mut qt, &mut qb);
+    }
     for e in tree.iter() { cmd.entity(e).despawn(); }
     let oh = &save.heroes[r];
     let spawn = |cmd: &mut Commands, e: Entity| { cmd.entity(e).insert(Tree); };

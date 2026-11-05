@@ -105,7 +105,11 @@ fn to_px(data: &GameData, p: Vec2) -> Vec2 { Vec2::new(p.x / 2.0 + data.world.wi
 
 /// Free-roam state of SceneMoveMap, kept while the game runs (position, walked distance, mission/hero markers).
 #[derive(Resource, Default)]
-pub struct Roam { pub pos: Option<Vec2>, walked: f32, boss_armed: bool, marks: Vec<(Vec2, MarkKind, u32)>, pending: Option<(f32, BattleSetup, String)> }
+pub struct Roam { pub pos: Option<Vec2>, walked: f32, boss_armed: bool, marks: Vec<(Vec2, MarkKind, u32)>, pending: Option<(f32, BattleSetup, String)>,
+    /// SceneMoveMap fight_retreat prompt: the battle on offer and the marker to put back on RETREAT
+    prompt: Option<(BattleSetup, Option<(Vec2, MarkKind, u32)>)> }
+#[derive(Component)]
+struct PromptEl;
 #[derive(Clone, Copy, PartialEq)]
 enum MarkKind { Task, Hero }
 #[derive(Component)]
@@ -159,9 +163,22 @@ fn refill_marks(data: &GameData, save: &Save, roam: &mut Roam) {
 fn actions(mut cmd: Commands, a: Res<AssetServer>, mut clicked: ResMut<Clicked>, data: Res<GameData>, save: Res<Save>, mut setup: ResMut<BattleSetup>,
            mut next: ResMut<NextState<AppState>>, mut q: Query<&mut Walker>, mut toast: ResMut<Toast>, k: Res<ButtonInput<KeyCode>>,
            mouse: Res<ButtonInput<MouseButton>>, cur: Res<Cursor>, hots: Query<(&Hot, &GlobalTransform, &InheritedVisibility)>,
-           root: Query<&Transform, With<MapRoot>>, mut roam: ResMut<Roam>, time: Res<Time>) {
-    if k.just_pressed(KeyCode::Escape) { next.set(AppState::Tavern); }
+           root: Query<&Transform, With<MapRoot>>, mut roam: ResMut<Roam>, (time, prompt_q): (Res<Time>, Query<Entity, With<PromptEl>>)) {
     // "Monsters encountered!" banner, then the battle
+    // fight_retreat prompt: FIGHT starts the battle, RETREAT (or Esc) closes it and leaves the party where it is
+    if roam.prompt.is_some() {
+        let mut choice = None;
+        for act in clicked.0.drain(..) { match act { Act::Custom(20, _) => choice = Some(true), Act::Custom(21, _) => choice = Some(false), _ => {} } }
+        if k.just_pressed(KeyCode::Escape) { choice = Some(false); }
+        if let Some(fight) = choice {
+            for e in prompt_q.iter() { cmd.entity(e).despawn(); }
+            let (s, mark) = roam.prompt.take().unwrap();
+            if fight { *setup = s; next.set(AppState::Battle); }
+            else { roam.walked = 0.0; if let Some(m) = mark { roam.marks.push(m); } }
+        }
+        return;
+    }
+    if k.just_pressed(KeyCode::Escape) { next.set(AppState::Tavern); }
     if let Some((t, s, _)) = &mut roam.pending {
         *t -= time.delta_secs();
         if *t <= 0.0 { *setup = s.clone(); roam.pending = None; next.set(AppState::Battle); }
@@ -207,6 +224,34 @@ fn actions(mut cmd: Commands, a: Res<AssetServer>, mut clicked: ResMut<Clicked>,
     }
 }
 
+/// Pre-battle panel: the area's normalShow parchment (Monsters_encountered "Average level:", Hero_Encountered "Enemy Level:",
+/// Boss_Encountered_N "Boss Level:") with button_fight / button_RETREAT (SceneMoveMap::OnLoad creates both buttons).
+fn offer_battle(roam: &mut Roam, setup: BattleSetup, mark: Option<(Vec2, MarkKind, u32)>, banner: &str, cmd: &mut Commands, a: &AssetServer, f: &Fonts) {
+    roam.walked = 0.0;
+    let avg = (setup.level.0 + setup.level.1) as f32 / 2.0;
+    let dim = cmd.spawn((Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.5), SCREEN * 1.3), Transform::from_xyz(0.0, 0.0, 82.0), Scr, PromptEl)).id();
+    let _ = dim;
+    let c = Vec2::new(0.0, 62.0);
+    let p = image(cmd, a, &format!("ui/{banner}.png"), c, None, 83.0);
+    cmd.entity(p).insert(PromptEl);
+    // the level goes after the panel's "...Level:" caption (measured on the 358×374 textures)
+    let dx = if banner.starts_with("Hero") { 50.0 } else if banner.starts_with("Boss") { 40.0 } else { 48.0 };
+    let lv = if avg.fract() == 0.0 { format!("{avg:.0}") } else { format!("{avg:.1}") };
+    let t = text(cmd, f, lv, c + Vec2::new(dx, 126.0), 24.0, Color::srgb(1.0, 0.95, 0.75), 84.0);
+    cmd.entity(t).insert((PromptEl, bevy::sprite::Anchor::CENTER_LEFT));
+    for (img, x, act) in [("button_fight", -80.0, 20), ("button_RETREAT", 80.0, 21)] {
+        let b = button(cmd, a, &format!("ui/{img}.png"), Some(&format!("ui/{img}_0.png")), Vec2::new(x, -160.0), Vec2::new(140.0, 60.0), 84.0, Act::Custom(act, 0));
+        cmd.entity(b).insert(PromptEl);
+    }
+    roam.prompt = Some((setup, mark));
+}
+
+/// Average level of the battle party (the base for mission and hero-camp levels, see `walk`).
+fn party_level(save: &Save) -> i32 {
+    let v: Vec<i32> = save.party.iter().filter_map(|&r| save.heroes.get(r)).map(|o| o.level).collect();
+    if v.is_empty() { 1 } else { (v.iter().sum::<i32>() as f32 / v.len() as f32).round() as i32 }
+}
+
 fn start_battle(roam: &mut Roam, setup: BattleSetup, banner: &str, cmd: &mut Commands, a: &AssetServer) {
     roam.walked = 0.0;
     roam.pending = Some((1.3, setup, banner.into()));
@@ -214,10 +259,10 @@ fn start_battle(roam: &mut Roam, setup: BattleSetup, banner: &str, cmd: &mut Com
 }
 
 #[allow(clippy::too_many_arguments)]
-fn walk(mut cmd: Commands, a: Res<AssetServer>, time: Res<Time>, data: Res<GameData>, mut save: ResMut<Save>, mut roam: ResMut<Roam>,
+fn walk(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, time: Res<Time>, data: Res<GameData>, mut save: ResMut<Save>, mut roam: ResMut<Roam>,
         mut q: Query<(&mut Walker, &mut Transform, &Children)>, mut an: Query<&mut Anim>, mut toast: ResMut<Toast>,
         marks: Query<Entity, With<MarkSprite>>, root: Query<Entity, With<MapRoot>>) {
-    if roam.pending.is_some() { return; }
+    if roam.pending.is_some() || roam.prompt.is_some() { return; }
     let Ok((mut w, mut t, ch)) = q.single_mut() else { return };
     let set_anim = |an: &mut Query<&mut Anim>, row: Row, flip: Option<bool>| for c in ch.iter() { if let Ok(mut a) = an.get_mut(c) { a.play(row, false); if let Some(f) = flip { a.flip = f; } } };
     let Some(dest) = w.dest else { set_anim(&mut an, Row::Standby, None); return };
@@ -244,7 +289,7 @@ fn walk(mut cmd: Commands, a: Res<AssetServer>, time: Res<Time>, data: Res<GameD
         Some(n) if roam.boss_armed => {
             roam.boss_armed = false; w.dest = None;
             let banner = if data.world.nodes.len() > 15 && n.index == 15 { "Hero_Encountered".to_string() } else { format!("Boss_Encountered_{}", n.index.clamp(1, 13)) };
-            start_battle(&mut roam, BattleSetup { node: n.index, map: n.boss_map, level: (n.boss_level, n.boss_level), boss: true, arena: None, tutorial: false, siege: None , survival: false }, &banner, &mut cmd, &a);
+            offer_battle(&mut roam, BattleSetup { node: n.index, map: n.boss_map, level: (n.boss_level, n.boss_level), boss: true, arena: None, tutorial: false, siege: None , survival: false }, None, &banner, &mut cmd, &a, &f);
             save.write();
             return;
         }
@@ -253,16 +298,21 @@ fn walk(mut cmd: Commands, a: Res<AssetServer>, time: Res<Time>, data: Res<GameD
     }
     // mission / hero-camp markers
     if let Some(k) = roam.marks.iter().position(|m| m.0.distance(np) <= 40.0) {
-        let (_, kind, map) = roam.marks.remove(k);
+        let mark = roam.marks.remove(k);
+        let (_, kind, map) = mark;
         let n = area.unwrap_or(&data.world.nodes[1]);
-        let (lo, hi) = (n.min_level.max(1), n.max_level.max(1));
-        let ch = if kind == MarkKind::Task { data.world.task_level } else { data.world.hero_level };
+        // UserMoveMapInfoGameObject::OnGameEvent: a mission (control 10) is fought at base − levelchange + rand(2·levelchange + 1),
+        // a hero camp (control 11) at base + levelchange (−3), both at least 1. The base is a runtime GameData value I could not
+        // trace to its writer; it is taken here as the party's average level so both kinds keep pace with the party.
+        let base = party_level(&save);
+        let lc = if kind == MarkKind::Task { data.world.task_level } else { data.world.hero_level };
+        let lvl = if kind == MarkKind::Task { base - lc + fastrand::i32(0..=2 * lc.abs()) } else { base + lc }.max(1);
         let first = map == 113;
         let map = if data.waves.maps.contains_key(&map) { map } else { n.maps[0] };
         w.dest = None;
         for e in marks.iter() { cmd.entity(e).despawn(); }
-        start_battle(&mut roam, BattleSetup { node: n.index, map, level: if first { (1, 1) } else { ((lo + ch).max(1), (hi + ch).max(1)) }, boss: false, arena: None, tutorial: false, siege: None , survival: false },
-            if kind == MarkKind::Task { "Monsters_encountered" } else { "Hero_Encountered" }, &mut cmd, &a);
+        offer_battle(&mut roam, BattleSetup { node: n.index, map, level: if first { (1, 1) } else { (lvl, lvl) }, boss: false, arena: None, tutorial: false, siege: None , survival: false },
+            Some(mark), if kind == MarkKind::Task { "Monsters_encountered" } else { "Hero_Encountered" }, &mut cmd, &a, &f);
         save.write();
         return;
     }
@@ -273,8 +323,8 @@ fn walk(mut cmd: Commands, a: Res<AssetServer>, time: Res<Time>, data: Res<GameD
             let maps: Vec<u32> = n.maps.iter().copied().filter(|m| data.waves.maps.contains_key(m)).collect();
             if !maps.is_empty() {
                 w.dest = None;
-                start_battle(&mut roam, BattleSetup { node: n.index, map: maps[fastrand::usize(..maps.len())], level: (n.min_level, n.max_level), boss: false, arena: None, tutorial: false, siege: None , survival: false },
-                    "Monsters_encountered", &mut cmd, &a);
+                offer_battle(&mut roam, BattleSetup { node: n.index, map: maps[fastrand::usize(..maps.len())], level: (n.min_level, n.max_level), boss: false, arena: None, tutorial: false, siege: None , survival: false },
+                    None, "Monsters_encountered", &mut cmd, &a, &f);
                 save.write();
             }
         }
