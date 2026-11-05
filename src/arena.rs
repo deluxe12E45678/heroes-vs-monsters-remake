@@ -34,10 +34,13 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     for (row, &ti) in picks.0.iter().enumerate() {
         let Some(t) = data.arena.targets.get(ti) else { continue };
         let y = [161.0, 37.0, -92.0][row];
-        text(&mut cmd, &f, &t.name, Vec2::new(-240.0, y + 12.0), 24.0, Color::srgb(1.0, 0.95, 0.8), 3.0);
-        text(&mut cmd, &f, format!("Lv {}  Rank {}  Score {}", t.ave_level, t.rank, t.score), Vec2::new(-240.0, y - 16.0), 15.0, Color::srgb(0.25, 0.12, 0.05), 3.0);
-        let team: Vec<String> = t.team.iter().filter_map(|&(h, _)| data.heroes.heroes.iter().find(|x| x.index == h).map(|x| x.class_name.clone())).collect();
-        text(&mut cmd, &f, team.join(", "), Vec2::new(20.0, y), 15.0, Color::srgb(0.25, 0.12, 0.05), 3.0);
+        text(&mut cmd, &f, &t.name, Vec2::new(-240.0, y + 16.0), 22.0, Color::srgb(1.0, 0.95, 0.8), 3.0);
+        text(&mut cmd, &f, format!("Lv {}  Rank {}  Score {}", t.ave_level, t.rank, t.score), Vec2::new(-240.0, y - 2.0), 15.0, Color::srgb(0.25, 0.12, 0.05), 3.0);
+        // class list under the score line (was overlapping the score); trim to 3 names so it stays on the plank
+        let mut team: Vec<String> = t.team.iter().filter_map(|&(h, _)| data.heroes.heroes.iter().find(|x| x.index == h).map(|x| x.class_name.clone())).collect();
+        let extra = team.len().saturating_sub(3);
+        if extra > 0 { team.truncate(3); team.push(format!("+{extra}")); }
+        text(&mut cmd, &f, team.join(" · "), Vec2::new(-240.0, y - 22.0), 13.0, Color::srgb(0.35, 0.18, 0.08), 3.0);
         button(&mut cmd, &a, "ui/arena_fight.png", Some("ui/arena_fight_0.png"), Vec2::new(340.0, y), Vec2::new(150.0, 66.0), 3.0, Act::Custom(1, ti as i32));
     }
     text(&mut cmd, &f, format!("Medals {}   Arena score {}", save.medals, save.arena_score), Vec2::new(38.0, -213.0), 20.0, Color::srgb(1.0, 0.95, 0.8), 3.0);

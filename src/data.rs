@@ -46,6 +46,10 @@ pub struct MapNode {
     pub index: u32, pub x: f32, pub y: f32, pub unlock_level: i32, pub icon: String,
     pub boss_level: i32, pub boss_map: u32, pub min_level: i32, pub max_level: i32, pub maps: Vec<u32>,
     #[serde(default)] pub radius: f32, #[serde(default)] pub boss_radius: f32, #[serde(default)] pub begin_dis: f32, #[serde(default)] pub per_pixel: f32,
+    /// WorldMoveMap.xml <FallDown type="normalEquipIndex"> — items shown under Usually Drops on the encounter parchment.
+    #[serde(default)] pub normal_drops: Vec<i32>,
+    /// WorldMoveMap.xml <FallDown type="bossEquipIndex">.
+    #[serde(default)] pub boss_drops: Vec<i32>,
 }
 /// Offline arena: the PVP_DummyList.xml opponents.
 #[derive(Debug, Clone, Deserialize)]

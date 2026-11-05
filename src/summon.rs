@@ -19,12 +19,21 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     image(&mut cmd, &a, "ui/bar_summon_monsters.png", Vec2::new(0.0, 250.0), None, 2.0);
     image(&mut cmd, &a, "ui/Summon_Monsters_text01.png", Vec2::new(-300.0, 195.0), None, 2.0);
     text(&mut cmd, &f, "Your minion fights beside your heroes in every battle.", Vec2::new(120.0, 195.0), 16.0, Color::WHITE, 2.0);
-    if save.pets.is_empty() {
-        text(&mut cmd, &f, "No minions yet.\nCapture castles in SIEGE to win their bosses as minions.", Vec2::new(0.0, -10.0), 24.0, Color::srgb(1.0, 0.9, 0.6), 3.0);
+    // five card slots always drawn so the strip is full (empty slots show a dim kuang + hint)
+    let slots = 5usize;
+    for i in 0..slots {
+        let x = (i as f32 - (slots as f32 - 1.0) / 2.0) * 200.0;
+        if i >= save.pets.len() {
+            image(&mut cmd, &a, "ui/Summon_Monsters_kuang02.png", Vec2::new(x, -10.0), None, 2.0);
+            text(&mut cmd, &f, "Empty", Vec2::new(x, 40.0), 18.0, Color::srgb(0.7, 0.6, 0.45), 3.0);
+            text(&mut cmd, &f, "Win a SIEGE\ncastle boss", Vec2::new(x, -40.0), 14.0, Color::srgb(0.85, 0.75, 0.55), 3.0);
+        }
     }
-    let n = save.pets.len().min(5);
+    if save.pets.is_empty() {
+        text(&mut cmd, &f, "No minions yet — tap SIEGE (bottom-right) to capture castle bosses.", Vec2::new(0.0, -230.0), 18.0, Color::srgb(1.0, 0.9, 0.6), 3.0);
+    }
     for (i, &(boss, lv)) in save.pets.iter().enumerate().take(5) {
-        let x = (i as f32 - (n as f32 - 1.0) / 2.0) * 200.0;
+        let x = (i as f32 - (slots as f32 - 1.0) / 2.0) * 200.0;
         let on = save.active_pet == Some(i);
         image(&mut cmd, &a, if on { "ui/Summon_Monsters_kuang03.png" } else { "ui/Summon_Monsters_kuang02.png" }, Vec2::new(x, -10.0), None, 2.0);
         let key = enemy_key(&data, boss);

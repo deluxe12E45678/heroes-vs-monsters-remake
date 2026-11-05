@@ -91,6 +91,12 @@ struct SelIcon(usize, String);
 #[derive(Component)]
 struct SkillFrame(usize);
 #[derive(Component)]
+struct WaveHud;
+#[derive(Component)]
+struct PartyHud(usize); // roster index into party display rows
+#[derive(Component)]
+struct PartyHpFill(usize);
+#[derive(Component)]
 struct BoxSel;
 
 #[derive(Resource, Default)]
@@ -229,7 +235,7 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
         let u = Unit { side: Side::Hero, trig: h.trigger_rect.as_ref().map(|r| Vec4::new(r.x, r.y, r.z, r.w)).unwrap_or(Vec4::new(80.0, 80.0, 40.0, 40.0)), f: ft, ex, hp: ft.max_hp, atk_cd: 0.5, target: None, forced: None, move_to: None, roster: Some(r), slot: i, enemy: -1,
             level: oh.level, ranged, healer: h.attack_type == AttackType::Buff, range: if h.attack_type == AttackType::Buff { 330.0 } else if ranged { h.trigger_rect.as_ref().map(|r| r.x * 2.0).unwrap_or(330.0) } else { 70.0 }, hatred: h.hatred,
             taunted_by: None, buff: (0, 0, 0.0), skills: test_skill(&data, i).map(|s| vec![s]).unwrap_or_else(|| hero_actives(&data, oh)), dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
-        let pos = Vec2::new(-330.0 + if ranged { -60.0 } else { 40.0 }, if party.len() > 3 { -30.0 - 62.0 * i as f32 } else { -60.0 - 70.0 * i as f32 });
+        let pos = Vec2::new(-330.0 + if ranged { -60.0 } else { 40.0 }, if party.len() > 3 { -20.0 - 72.0 * i as f32 } else { -40.0 - 88.0 * i as f32 });
         let e = spawn_unit_look(&mut cmd, &a, &data, &sheets, &hero_key(&data, oh.hero), pos, u, Some(crate::anim::hero_look(&data, oh.hero, Some(&oh.equip))));
         if i == 0 { cmd.entity(e).insert(Selected); }
         // (the original has no bottom panel: HP bars over heads, the selected hero's skill in the top-left box)
@@ -246,6 +252,21 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
         cmd.entity(si).insert(SelIcon(k, String::new()));
         let mut ov = Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.65), Vec2::splat(66.0)); ov.custom_size = Some(Vec2::new(66.0, 0.0));
         cmd.spawn((ov, Transform::from_translation(p.extend(61.0)), Scr, CdOverlay(k), SkillFrame(k)));
+    }
+    // wave / enemy counter (own layout; the original only flashes Wave_Incoming between teams)
+    let wh = text(&mut cmd, &f, "Wave 1/1", Vec2::new(0.0, 280.0), 22.0, Color::srgb(1.0, 0.95, 0.75), 61.0);
+    cmd.entity(wh).insert(WaveHud);
+    // party name + HP strip along the left (own design: original only has over-head HPbars; names help when units stack)
+    for (i, &r) in party.iter().enumerate() {
+        let oh = &save.heroes[r];
+        let name = data.hero(oh.hero).class_name.clone();
+        let y = 180.0 - 48.0 * i as f32;
+        let label = text(&mut cmd, &f, format!("{name}"), Vec2::new(-430.0, y + 12.0), 16.0, Color::srgb(1.0, 0.95, 0.8), 61.0);
+        cmd.entity(label).insert((PartyHud(i), bevy::sprite::Anchor::CENTER_LEFT));
+        image(&mut cmd, &a, "ui/HPbar_bg.png", Vec2::new(-370.0, y - 6.0), Some(Vec2::new(120.0, 10.0)), 61.0);
+        let mut fill = Sprite::from_image(a.load("ui/HPbar_mc.png"));
+        fill.custom_size = Some(Vec2::new(120.0, 10.0));
+        cmd.spawn((fill, Transform::from_translation(Vec3::new(-370.0, y - 6.0, 61.5)), Scr, PartyHpFill(i)));
     }
     // battle speed 1×/2×/3× (own addition; remembered in the save), styled as an item frame like the skill box
     image(&mut cmd, &a, "ui/item.png", Vec2::new(360.0, 280.0), Some(Vec2::splat(64.0)), 60.0);
@@ -841,8 +862,8 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
         let mut push = Vec2::ZERO;
         // no sliding while an attack / skill animation plays
         let busy = ch.iter().find_map(|c| anims.get(c).ok()).map(|a| a.once && !a.done).unwrap_or(false);
-        for (o, op, od) in &pos { if *o != e && !od { let d = p - *op; let l = d.length(); if l < 36.0 && l > 0.01 { push += d / l * (36.0 - l); } } }
-        let mut np = if busy { p } else { p + push * 0.2 };
+        for (o, op, od) in &pos { if *o != e && !od { let d = p - *op; let l = d.length(); if l < 52.0 && l > 0.01 { push += d / l * (52.0 - l); } } }
+        let mut np = if busy { p } else { p + push * 0.35 };
         let minx = if u.side == Side::Enemy { FIELD_MIN.x } else { FIELD_MIN.x };
         let maxx = if u.side == Side::Enemy { 560.0 } else { FIELD_MAX.x };
         np = np.clamp(Vec2::new(minx, FIELD_MIN.y), Vec2::new(maxx, FIELD_MAX.y));
@@ -996,10 +1017,18 @@ fn effects(mut cmd: Commands, time: Res<Time>, mut fl: Query<(Entity, &mut Float
 }
 
 #[allow(clippy::too_many_arguments)]
-fn hud(run: Res<Run>, mut ov: Query<(&CdOverlay, &mut Sprite), Without<SelIcon>>,
-       mut at: Query<&mut Text2d, With<AutoText>>, save: Res<Save>, sel: Query<&Unit, With<Selected>>, mut icon: Query<(&mut SelIcon, &mut Sprite), Without<CdOverlay>>,
-       mut frames: Query<(&SkillFrame, &mut Visibility)>, a: Res<AssetServer>) {
-    let _ = &run;
+#[allow(clippy::too_many_arguments)]
+fn hud(run: Res<Run>, setup: Res<BattleSetup>, data: Res<GameData>,
+       (mut ov, mut at, save, sel, mut icon, mut frames, a): (
+           Query<(&CdOverlay, &mut Sprite), (Without<SelIcon>, Without<PartyHpFill>)>,
+           Query<&mut Text2d, With<AutoText>>, Res<Save>, Query<&Unit, With<Selected>>,
+           Query<(&mut SelIcon, &mut Sprite), (Without<CdOverlay>, Without<PartyHpFill>)>,
+           Query<(&SkillFrame, &mut Visibility)>, Res<AssetServer>),
+       (mut wave_t, mut party_t, mut party_hp, units): (
+           Query<&mut Text2d, (With<WaveHud>, Without<AutoText>, Without<PartyHud>)>,
+           Query<(&PartyHud, &mut Text2d), (Without<AutoText>, Without<WaveHud>)>,
+           Query<(&PartyHpFill, &mut Sprite, &mut Transform), (Without<SelIcon>, Without<CdOverlay>)>,
+           Query<&Unit>)) {
     let su = sel.iter().next().filter(|u| u.side == Side::Hero);
     let n = su.map(|u| u.skills.len()).unwrap_or(0);
     for (mut si, mut sp) in icon.iter_mut() {
@@ -1013,6 +1042,37 @@ fn hud(run: Res<Run>, mut ov: Query<(&CdOverlay, &mut Sprite), Without<SelIcon>>
         s.custom_size = Some(Vec2::new(66.0, 66.0 * r));
     }
     if let Ok(mut t) = at.single_mut() { let s = format!("x{}", save.battle_speed.clamp(1, 3)); if t.0 != s { t.0 = s; } }
+    // wave / enemy counter
+    if let Ok(mut t) = wave_t.single_mut() {
+        let alive = units.iter().filter(|u| u.side == Side::Enemy && !u.dead).count();
+        let s = if setup.survival {
+            format!("Wave {}  Enemies {}", run.surv_waves.max(0) + 1, alive)
+        } else if let Some(mw) = data.waves.maps.get(&setup.map) {
+            let total = mw.teams.len().max(1);
+            let cur = (run.team + 1).min(total);
+            format!("Wave {cur}/{total}  Enemies {alive}")
+        } else {
+            format!("Enemies {alive}")
+        };
+        if t.0 != s { t.0 = s; }
+    }
+    // party HP fills + dead greying of names
+    for (ph, mut tx) in party_t.iter_mut() {
+        let u = units.iter().find(|u| u.side == Side::Hero && u.slot == ph.0);
+        if let Some(u) = u {
+            let name = save.party.get(ph.0).and_then(|&r| save.heroes.get(r)).map(|oh| data.hero(oh.hero).class_name.clone()).unwrap_or_default();
+            let s = if u.dead { format!("{name}  KO") } else { format!("{name}  {:.0}/{:.0}", u.hp, u.f.max_hp) };
+            if tx.0 != s { tx.0 = s; }
+        }
+    }
+    for (ph, mut sp, mut tr) in party_hp.iter_mut() {
+        let u = units.iter().find(|u| u.side == Side::Hero && u.slot == ph.0);
+        let r = u.map(|u| if u.dead { 0.0 } else { (u.hp / u.f.max_hp).clamp(0.0, 1.0) }).unwrap_or(0.0);
+        let w = 120.0 * r;
+        sp.custom_size = Some(Vec2::new(w, 10.0));
+        // keep the fill left-aligned inside the 120px bg centred at -370
+        tr.translation.x = -370.0 - (120.0 - w) / 2.0;
+    }
 }
 
 fn end_check(mut run: ResMut<Run>, units: Query<&Unit>, ents: Query<(Entity, &Unit)>, mut save: ResMut<Save>, data: Res<GameData>, setup: Res<BattleSetup>, mut next: ResMut<NextState<AppState>>,

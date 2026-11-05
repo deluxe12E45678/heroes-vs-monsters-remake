@@ -140,7 +140,7 @@ fn hero_summary(data: &GameData, save: &Save, r: usize) -> (String, String) {
 #[allow(clippy::too_many_arguments)]
 fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameData>, sheets: Res<Sheets>, mut save: ResMut<Save>, mut tab: ResMut<Tab>, mut sel: ResMut<Selected>,
          mut ev: ResMut<SlotEvents>, mut clicked: ResMut<Clicked>, mut rb: ResMut<crate::store::Rebuild>,
-         (slots, icons): (Query<(&ItemSlot, &Transform)>, Query<Entity, With<ItemIcon>>), (mut sfx, mut toast): (ResMut<crate::audio::Sfx>, ResMut<Toast>),
+         (slots, icons, marks): (Query<(&ItemSlot, &Transform)>, Query<Entity, With<ItemIcon>>, Query<Entity, With<ClassMark>>), (mut sfx, mut toast): (ResMut<crate::audio::Sfx>, ResMut<Toast>),
          (mut qt, mut qb, mut cells, mut show): (Query<&mut Text2d, (With<DescTitle>, Without<DescBody>)>, Query<&mut Text2d, (With<DescBody>, Without<DescTitle>)>, Query<(&StatCell, &mut Text2d, &mut Visibility), (Without<DescTitle>, Without<DescBody>, Without<StatsText>)>, ResMut<ShowStats>),
          (k, mut next): (Res<ButtonInput<KeyCode>>, ResMut<NextState<AppState>>), (fig, tabq, mut stq, pages, sbtn, mut page_on): (Query<Entity, With<HeroFig>>, Query<Entity, With<TabBtn>>, Query<&mut Text2d, (With<StatsText>, Without<DescTitle>, Without<DescBody>)>, Query<Entity, With<AttrPage>>, Query<Entity, With<StatesBtn>>, Local<bool>)) {
     if k.just_pressed(KeyCode::Escape) { next.set(AppState::Tavern); }
@@ -199,7 +199,7 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     if rb.0 {
         rb.0 = false;
-        refresh_icons(&mut cmd, &a, &data, &save, r, tab.0, &slots, &icons);
+        refresh_icons(&mut cmd, &a, &f, &data, &save, r, tab.0, &slots, &icons, &marks);
         for e in fig.iter() { cmd.entity(e).despawn(); }
         let e = crate::anim::hero_figure(&mut cmd, &data, &sheets, &save.heroes[r], PARCH + Vec2::new(0.0, -81.0), 125.0, 3.5);
         cmd.entity(e).insert(HeroFig);

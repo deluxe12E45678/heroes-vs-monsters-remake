@@ -57,7 +57,7 @@ pub struct Rebuild(pub bool);
 #[allow(clippy::too_many_arguments)]
 fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameData>, mut save: ResMut<Save>, mut tab: ResMut<Tab>, mut sel: ResMut<Selected>,
          mut ev: ResMut<SlotEvents>, mut clicked: ResMut<Clicked>, mut ssel: ResMut<StoreSel>, mut rb: ResMut<Rebuild>,
-         (slots, icons): (Query<(&ItemSlot, &Transform)>, Query<Entity, With<ItemIcon>>), (mut sfx, mut toast): (ResMut<crate::audio::Sfx>, ResMut<Toast>),
+         (slots, icons, marks): (Query<(&ItemSlot, &Transform)>, Query<Entity, With<ItemIcon>>, Query<Entity, With<ClassMark>>), (mut sfx, mut toast): (ResMut<crate::audio::Sfx>, ResMut<Toast>),
          (mut qt, mut qb): (Query<&mut Text2d, (With<DescTitle>, Without<DescBody>)>, Query<&mut Text2d, (With<DescBody>, Without<DescTitle>)>),
          (k, mut next, mut pend): (Res<ButtonInput<KeyCode>>, ResMut<NextState<AppState>>, Local<Option<(u32, i32)>>), (hl, tabq): (Query<Entity, With<Highlight>>, Query<Entity, With<TabBtn>>)) {
     if k.just_pressed(KeyCode::Escape) { next.set(AppState::Tavern); }
@@ -117,7 +117,7 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     if rb.0 {
         rb.0 = false;
-        refresh_icons(&mut cmd, &a, &data, &save, sel.0, tab.0, &slots, &icons);
+        refresh_icons(&mut cmd, &a, &f, &data, &save, sel.0, tab.0, &slots, &icons, &marks);
         for e in hl.iter() { cmd.entity(e).despawn(); }
         if let Some(s) = ssel.0 {
             let p = match s { Slot::Shop(i) => Some(grid_pos(SHOP_C, i)), Slot::Stash(i) if i / 15 == tab.0 => Some(grid_pos(STASH_C, i % 15)), _ => None };

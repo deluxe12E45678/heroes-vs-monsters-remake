@@ -52,6 +52,34 @@ pub fn set_desc(title: impl Into<String>, body: impl Into<String>, qt: &mut Quer
     if let Ok(mut b) = qb.single_mut() { b.0 = body.into(); }
 }
 
+/// Unique class names that can equip `id`, from heroes.ron weapon/clothes/hat/shoe type lists via
+/// `stats::hero_can_use`. Jewelry is usable by everyone. No dedicated class-icon textures exist in the
+/// original English UI pack, so markers use short abbreviations as text chips on each item tile.
+pub fn classes_for_item(data: &GameData, id: i32) -> Vec<String> {
+    let Some(item) = data.item(id) else { return vec![] };
+    if item.slot == crate::types::EquipSlot::Jewelry { return vec!["All".into()]; }
+    let mut out = Vec::new();
+    for h in &data.heroes.heroes {
+        if h.super_hero { continue; }
+        if !crate::stats::hero_can_use(h, item) { continue; }
+        let abbr = match h.class_name.as_str() {
+            "Fighter" => "Fgt", "Barbarian" => "Bar", "Paladin" => "Pal", "Fire Mage" => "FMg",
+            "Ice Mage" => "IMg", "Cleric" => "Clr", "Archer" => "Arc", "Rogue" => "Rog",
+            "Bard" => "Brd", "Shaman" => "Sha", "Summoner" => "Sum", "Elite Fighter" => "EFg",
+            other => other,
+        };
+        if !out.iter().any(|s| s == abbr) { out.push(abbr.to_string()); }
+    }
+    out
+}
+
+pub fn class_marker_line(data: &GameData, id: i32) -> String {
+    let v = classes_for_item(data, id);
+    if v.is_empty() { return String::new(); }
+    if v.len() == 1 && v[0] == "All" { return "All classes".into(); }
+    v.join("·")
+}
+
 /// Item tile: frame + icon (icons/item_<tex_index>.png).
 pub fn item_icon_path(data: &GameData, id: i32) -> Option<String> {
     data.item(id).map(|e| format!("icons/item_{}.png", e.tex_index))
@@ -103,8 +131,15 @@ pub fn item_desc(data: &GameData, id: i32) -> (String, String) {
     for ch in intro.chars() { match ch { '<' => depth += 1, '>' if depth > 0 => depth -= 1, _ if depth == 0 => intro2.push(ch), _ => {} } }
     let intro = intro2.split_whitespace().collect::<Vec<_>>().join(" ");
     let stats = item_stat_lines(data, id).join("   ·   ");
-    (format!("{}   (Price: {})", e.name.trim(), e.price),
-     if stats.is_empty() { intro } else { format!("{stats}\n{intro}") })
+    let classes = class_marker_line(data, id);
+    let body = {
+        let mut parts = Vec::new();
+        if !stats.is_empty() { parts.push(stats); }
+        if !classes.is_empty() { parts.push(format!("Equip: {classes}")); }
+        if !intro.is_empty() { parts.push(intro); }
+        parts.join("\n")
+    };
+    (format!("{}   (Price: {})", e.name.trim(), e.price), body)
 }
 
 /// Text that must stay inside a box: the font shrinks a pixel per frame while the *measured* layout (TextLayoutInfo) is
@@ -129,6 +164,9 @@ pub enum Slot { Stash(usize), Shop(usize), Equip(usize) }
 pub struct ItemSlot(pub Slot);
 #[derive(Component)]
 pub struct ItemIcon(#[allow(dead_code)] pub Slot);
+/// Short class-abbreviation chip under an item icon (inventory / store / equip).
+#[derive(Component)]
+pub struct ClassMark;
 #[derive(Component)]
 pub struct DragGhost;
 
@@ -156,10 +194,12 @@ pub fn slot_item(save: &Save, hero: usize, s: Slot) -> Option<i32> {
     }
 }
 
-/// Re-create icons on top of every visible ItemSlot (cheap: ≤60 sprites).
-pub fn refresh_icons(cmd: &mut Commands, a: &AssetServer, data: &GameData, save: &Save, hero: usize, tab: usize,
-                     slots: &Query<(&ItemSlot, &Transform)>, icons: &Query<Entity, With<ItemIcon>>) {
+/// Re-create icons on top of every visible ItemSlot (cheap: ≤60 sprites), plus class-restriction chips.
+pub fn refresh_icons(cmd: &mut Commands, a: &AssetServer, f: &Fonts, data: &GameData, save: &Save, hero: usize, tab: usize,
+                     slots: &Query<(&ItemSlot, &Transform)>, icons: &Query<Entity, With<ItemIcon>>,
+                     marks: &Query<Entity, With<ClassMark>>) {
     for e in icons.iter() { cmd.entity(e).despawn(); }
+    for e in marks.iter() { cmd.entity(e).despawn(); }
     for (s, t) in slots.iter() {
         let real = match s.0 { Slot::Stash(i) => Slot::Stash(i + tab * 15), o => o };
         if let Some(id) = slot_item(save, hero, real) {
@@ -167,6 +207,13 @@ pub fn refresh_icons(cmd: &mut Commands, a: &AssetServer, data: &GameData, save:
                 let mut sp = Sprite::from_image(a.load(p));
                 sp.custom_size = Some(Vec2::splat(66.0));
                 cmd.spawn((sp, Transform::from_translation(t.translation + Vec3::Z), Scr, ItemIcon(real)));
+            }
+            let line = class_marker_line(data, id);
+            if !line.is_empty() {
+                let n = line.chars().filter(|c| *c == '·').count() + 1;
+                let size = if n <= 3 { 11.0 } else if n <= 5 { 9.0 } else { 8.0 };
+                let e = text(cmd, f, line, t.translation.truncate() + Vec2::new(0.0, -34.0), size, Color::srgb(1.0, 0.92, 0.55), t.translation.z + 2.0);
+                cmd.entity(e).insert(ClassMark);
             }
         }
     }
