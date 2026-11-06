@@ -46,8 +46,29 @@ pub fn main() {
         if let Ok(l) = l.parse::<i32>() { for h in &mut save.heroes { h.level = l; } }
     }
     let mut app = App::new();
+    // PC: always windowed + Normal z-order + focused:false so launching never steals focus from a
+    // maximized program the user is in (and autotest/HVSM_AUTOTEST runs never need focus either).
+    // Android stays immersive borderless-fullscreen (the activity focuses as usual).
+    let win = Window {
+        mode: if cfg!(target_os = "android") {
+            bevy::window::WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Primary)
+        } else {
+            bevy::window::WindowMode::Windowed
+        },
+        title: "Heroes vs Monsters".into(),
+        resolution: {
+            let (w, h) = std::env::var("HVSM_WINDOW").ok().and_then(|v| {
+                let mut it = v.split(',').filter_map(|x| x.parse::<u32>().ok());
+                Some((it.next()?, it.next()?))
+            }).unwrap_or((1136, 640));
+            WindowResolution::new(w, h)
+        },
+        focused: cfg!(target_os = "android"),
+        window_level: bevy::window::WindowLevel::Normal,
+        ..default()
+    };
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { mode: if cfg!(target_os = "android") { bevy::window::WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Primary) } else { bevy::window::WindowMode::Windowed }, title: "Heroes vs Monsters".into(), resolution: { let (w, h) = std::env::var("HVSM_WINDOW").ok().and_then(|v| { let mut it = v.split(',').filter_map(|x| x.parse::<u32>().ok()); Some((it.next()?, it.next()?)) }).unwrap_or((1136, 640)); WindowResolution::new(w, h) }, ..default() }),
+            primary_window: Some(win),
             ..default()
         }).set(bevy::render::RenderPlugin { render_creation: render_settings().into(), ..default() })
         .set(AssetPlugin { file_path: if cfg!(target_os = "android") { "".into() } else { data::asset_dir().to_string_lossy().into_owned() }, ..default() }))
@@ -61,6 +82,7 @@ pub fn main() {
         .init_resource::<ui::Clicked>()
         .init_resource::<ui::Toast>()
         .init_resource::<audio::Sfx>()
+        .insert_resource(audio::AudioFocus(cfg!(target_os = "android"))) // PC starts unfocused → muted until the user focuses the window
         .init_resource::<Selected>()
         .init_resource::<battle::BattleSetup>()
         .init_resource::<result::Outcome>()
@@ -71,7 +93,7 @@ pub fn main() {
         // BACK/PLAY clicks at random.
         .add_systems(PreUpdate, (ui::touch_to_mouse, ui::track_cursor, ui::click_system, ui::generic_actions).chain().after(bevy::input::InputSystems))
         .add_systems(Update, (ui::hover_labels, ui::toast_system, anim::animate, anim::build_rigs, anim::pose_rigs.after(anim::animate),
-                              audio::play_sfx, common::update_gold, common::fit_desc, state_music, fit_camera).chain())
+                              audio::focus_audio, audio::play_sfx, common::update_gold, common::fit_desc, state_music, fit_camera).chain())
         .add_plugins((menu::plugin, inn::plugin, hire::plugin, worldmap::plugin, store::plugin, equip::plugin, skills::plugin, battle::plugin, result::plugin, autotest::plugin, options::plugin, arena::plugin, siege::plugin, summon::plugin, slots::plugin));
     // PreStartup runs before the initial state's OnEnter. (Spawning these before app.run(), i.e. before the render
     // plugins finished, desynced the render world: sprites were drawn with other entities' transforms.)
