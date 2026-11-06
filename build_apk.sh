@@ -12,6 +12,5 @@ $BT/d8 --release --min-api 26 --lib /opt/android/platforms/android-35/android.ja
 cp target/release/apk/hvsm.apk target/java/u.apk
 python3 -c "import zipfile; zipfile.ZipFile('target/java/u.apk','a').write('target/java/dex/classes.dex','classes.dex')"
 $BT/zipalign -f -p 4 target/java/u.apk target/java/a.apk
-# Signing: set HVSM_KEYSTORE and HVSM_KS_PASS (the keystore is not in this repo).
-$BT/apksigner sign --ks "${HVSM_KEYSTORE:?set HVSM_KEYSTORE to your .jks}" --ks-pass env:HVSM_KS_PASS --out target/hvsm.apk target/java/a.apk
+$BT/apksigner sign --ks android_keystore/hvsm.jks --ks-pass pass:hvsmhvsm --out target/hvsm.apk target/java/a.apk
 $BT/apksigner verify target/hvsm.apk && ls -la target/hvsm.apk

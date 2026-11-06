@@ -2458,15 +2458,13 @@ checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "hvsm_proto"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "bevy",
  "fastrand",
- "raw-window-handle",
  "ron",
  "serde",
  "serde_json",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
