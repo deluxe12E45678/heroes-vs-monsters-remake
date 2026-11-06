@@ -84,14 +84,16 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     // HUD (fixed on screen)
     // BOSS / ARENA / SIEGE in a row top-right, as in the original's SceneMoveMap
+    // Mode row: skip a text label when the texture already bakes the word in (bar_map2 = SIEGE).
     let hud = [("ui/BOSS_dian_015.png", Vec2::new(200.0, 270.0), Act::Custom(2, 0), "BOSS"),
                ("ui/arena_icon.png", Vec2::new(305.0, 270.0), Act::Goto(AppState::Arena), "ARENA"),
-               ("ui/bar_map2.png", Vec2::new(410.0, 270.0), Act::Goto(AppState::Siege), "SIEGE"),
-               // WorldMoveMap <InfiniteEnemy icon="worldmap_spot_9" normalShow="SurvivalMode"> (placed in this HUD row: own layout)
+               ("ui/bar_map2.png", Vec2::new(410.0, 270.0), Act::Goto(AppState::Siege), ""),
                ("ui/worldmap_spot_9.png", Vec2::new(95.0, 270.0), Act::Custom(7, 0), "SURVIVAL")];
     for (img, p, act, lbl) in hud {
-        button(&mut cmd, &a, img, None, p, Vec2::new(78.0, 66.0), 50.0, act);
-        text(&mut cmd, &f, lbl, p + Vec2::new(0.0, -42.0), 16.0, Color::WHITE, 51.0);
+        button(&mut cmd, &a, img, None, p, Vec2::new(72.0, 60.0), 50.0, act);
+        if !lbl.is_empty() {
+            text(&mut cmd, &f, lbl, p + Vec2::new(0.0, -40.0), 13.0, Color::srgb(1.0, 0.95, 0.8), 51.0);
+        }
     }
     let bar = [("summon", Act::Goto(AppState::Summon)), ("inn", Act::Goto(AppState::Tavern)), ("shop", Act::Goto(AppState::Store)),
                ("skill", Act::Goto(AppState::Skills)), ("team", Act::Goto(AppState::Equip)), ("stash", Act::Goto(AppState::Equip))];
@@ -409,7 +411,7 @@ fn new_hero_popup(cmd: &mut Commands, a: &AssetServer, f: &Fonts) {
     let mut w = Sprite::from_image(a.load("ui/write.png")); w.custom_size = Some(SCREEN * 1.2); w.color = Color::srgba(0.0, 0.0, 0.0, 120.0 / 255.0);
     let mut es = vec![cmd.spawn((w, Transform::from_xyz(0.0, 0.0, 90.0), Scr)).id()];
     es.push(image(cmd, a, "ui/tanchuang01.png", Vec2::ZERO, None, 91.0));
-    let t = text(cmd, f, "A new hero has joined your cause!\nGo to the Team to use him!", Vec2::new(0.0, 40.0), 26.0, Color::WHITE, 92.0);
+    let t = text(cmd, f, "A new hero has joined your cause!\nGo to the Inn and tap HIRE to add them to your party!", Vec2::new(0.0, 40.0), 26.0, Color::WHITE, 92.0);
     es.push(t);
     es.push(button(cmd, a, "ui/button_ok.png", Some("ui/button_ok_0.png"), Vec2::new(0.0, -90.0), Vec2::new(140.0, 60.0), 92.0, Act::Custom(90, 0)));
     for e in es { cmd.entity(e).insert(NoticePopup); }

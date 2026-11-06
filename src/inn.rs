@@ -25,21 +25,26 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, data: Res<GameData>, sheets: Re
         (obj(-70.0, 75.0), Vec2::new(110.0, 120.0), Act::Goto(AppState::Store), "ui/bar_store.png", obj(-55.0, 60.0)),
         (obj(12.0, -5.0), Vec2::new(200.0, 100.0), Act::Goto(AppState::Equip), "ui/bar_armory.png", obj(12.0, -5.0)),
         (obj(125.0, -15.0), Vec2::new(130.0, 100.0), Act::Goto(AppState::Hire), "ui/bar_team.png", obj(120.0, 0.0)),
-        (obj(-95.0, -38.0), Vec2::new(190.0, 110.0), Act::Stub("GET GOLD (in-app purchase)"), "ui/bar_GETGOLD.png", obj(-105.0, -60.0)),
+        (obj(-95.0, -38.0), Vec2::new(190.0, 110.0), Act::Stub("GET GOLD — buy more gold (not available in this remake)"), "ui/bar_GETGOLD.png", obj(-105.0, -60.0)),
     ];
     for (c, s, act, sign, at) in props {
         let h_act = act.clone();
+        let is_hire = matches!(h_act, Act::Goto(AppState::Hire));
         let h = hotspot(&mut cmd, c, s, 10.0, act);
         let lbl = image(&mut cmd, &a, sign, at, None, 20.0);
         // the sign is part of the prop: clicking it does the same as the prop
         cmd.entity(lbl).insert(Hot { size: s * 0.6, act: h_act, normal: None, pressed: None });
+        // original bar_team art stays; add a HIRE caption so it is not confused with TEAM/Equip
+        if is_hire {
+            let hint = text(&mut cmd, &f, "HIRE", at + Vec2::new(0.0, -48.0), 18.0, Color::srgb(1.0, 0.92, 0.55), 21.0);
+            let _ = hint;
+        }
         let _ = h;
     }
     // map sign (bar_map, "地图") → SceneMoveMap; siege sign (bar_map2, "攻城战") is a stub like the original's locked mode
     button(&mut cmd, &a, "ui/bar_map.png", Some("ui/bar_map_0.png"), Vec2::new(-405.0, 262.0), Vec2::new(122.0, 96.0), 25.0, Act::Goto(AppState::WorldMap));
     button(&mut cmd, &a, "ui/bar_map2.png", None, Vec2::new(-275.0, 262.0), Vec2::new(122.0, 96.0), 25.0, Act::Goto(AppState::Siege));
     button(&mut cmd, &a, "ui/bar_menu.png", Some("ui/bar_menu_0.png"), Vec2::new(-403.0, -265.0), Vec2::new(146.0, 78.0), 5.0, Act::Goto(AppState::Menu));
-    let _ = f;
 }
 
 fn keys(k: Res<ButtonInput<KeyCode>>, mut next: ResMut<NextState<AppState>>) {

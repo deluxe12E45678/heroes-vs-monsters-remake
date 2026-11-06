@@ -30,11 +30,16 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, o: Res<Outcome>,
         button(&mut cmd, &a, "ui/button_ok.png", Some("ui/button_ok_0.png"), Vec2::new(0.0, -270.0), Vec2::new(140.0, 60.0), 3.0, Act::Goto(AppState::WorldMap));
         return;
     }
+    // dark plate so STAGECLEAR / rewards never blend into the faded bg
+    let mut plate = Sprite::from_color(Color::srgba(0.05, 0.03, 0.01, 0.72), Vec2::new(700.0, 420.0));
+    plate.custom_size = Some(Vec2::new(700.0, 420.0));
+    cmd.spawn((plate, Transform::from_xyz(0.0, 10.0, 1.5), Scr));
     image(&mut cmd, &a, if o.won { "ui/STAGECLEAR.png" } else { "ui/GAMEOVER.png" }, Vec2::new(0.0, 180.0), None, 2.0);
     sfx.play(if o.won { "sfx_win" } else { "sfx_lose" });
     let mut body = format!("Gold +{}    EXP +{}\n", o.money, o.exp);
     for l in &o.lines { body += l; body.push('\n'); }
-    text(&mut cmd, &f, body, Vec2::new(0.0, 20.0), 26.0, Color::WHITE, 2.0);
+    text(&mut cmd, &f, body, Vec2::new(0.0, 20.0), 26.0, Color::srgb(1.0, 0.96, 0.85), 2.0);
+    text(&mut cmd, &f, "Tap OK to continue", Vec2::new(0.0, -140.0), 18.0, Color::srgb(1.0, 0.85, 0.45), 2.5);
     button(&mut cmd, &a, "ui/button_ok.png", Some("ui/button_ok_0.png"), Vec2::new(0.0, -200.0), Vec2::new(140.0, 60.0), 3.0, Act::Goto(AppState::WorldMap));
 }
 

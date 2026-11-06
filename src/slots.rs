@@ -25,9 +25,9 @@ fn build(cmd: &mut Commands, a: &AssetServer, f: &Fonts, data: &crate::data::Gam
         let desc = match Save::read_slot(i) {
             Some(s) => {
                 let lead = s.party.first().and_then(|&r| s.heroes.get(r)).map(|h| format!("{} Lv{}", data.hero(h.hero).class_name, h.level)).unwrap_or_default();
-                format!("Slot {i}:  {lead}\nHeroes {}   Gold {}", s.heroes.len(), s.money())
+                format!("Slot {i} — Continue\n{lead} · {} heroes · {} gold", s.heroes.len(), s.money())
             }
-            None => format!("Slot {i}:  New Game"),
+            None => format!("Slot {i} — Empty\nTap OK to start a New Game"),
         };
         let e = text(cmd, f, desc, Vec2::new(-80.0, y + 6.0), 24.0, Color::srgb(0.3, 0.15, 0.05), 3.0); cmd.entity(e).insert(SlotUi);
         let e = button(cmd, a, "ui/button_ok.png", Some("ui/button_ok_0.png"), Vec2::new(300.0, y), Vec2::new(120.0, 52.0), 3.0, Act::Custom(1, i as i32)); cmd.entity(e).insert(SlotUi);

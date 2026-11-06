@@ -1,30 +1,4 @@
-# Heroes vs Monsters — fan remake (Rust + Bevy)
-
-A non-commercial fan recreation of the mobile game **Heroes vs Monsters** (based on the 3.4.3 English release), written in Rust with Bevy 0.20. Game logic and data follow the original; parts that are my own design are marked in the code. All original artwork, audio and the game name belong to their respective rights holders.
-
-Download a ready build from the [Releases](../../releases) page (Windows zip, Android arm64 APK).
-
-## Build and run on PC
-Install Rust (stable), then:
-```
-cargo run --release
-```
-Windows uses Bevy's default Vulkan/DX12 renderer (wgpu); Linux needs `libasound2-dev`, `libudev-dev` and `pkg-config`. Progress is saved to `save.ron` in the working directory (set `HVSM_SAVE` to override).
-
-## Build for Android (arm64)
-Needs the Android SDK (platform 35, build-tools 35.0.0), NDK 27, JDK 17, `cargo install cargo-apk` and `rustup target add aarch64-linux-android`. Edit the paths at the top of `build_apk.sh`, then:
-```
-export HVSM_KEYSTORE=/path/to/your.jks HVSM_KS_PASS=yourpassword
-./build_apk.sh
-```
-Output: `target/hvsm.apk`. A custom `MainActivity` (android_java/) gives immersive fullscreen and keeps the screen on.
-
-## Controls
-- **PC:** mouse — click to select/use, drag heroes to move them in battle and to drag items in store/equip; mouse wheel / ←→ scroll lists; Esc = back/pause.
-- **Android:** tap = click, drag = drag, the system Back button = Esc.
-- **Battle:** drag a hero to move it or onto a monster to attack; tap a skill icon to cast it (skills are manual only); pause and ×1/×2 speed buttons are top-right.
-
-## Details
+# Heroes vs Monsters — Bevy recreation prototype
 `cargo run --release` from this folder (Bevy 0.20, ron 0.12). It runs on Windows, Linux and macOS.
 On Linux, bevy_audio needs the ALSA development headers (libasound2-dev) and pkg-config.
 Progress is stored in `save.ron` in the working directory; delete it to start a new game.

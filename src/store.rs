@@ -41,12 +41,15 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     tabs(&mut cmd, &a, &f, STASH_C, 0, 1, save.bag_tabs as usize);
     desc_box(&mut cmd, &a, &f, Vec2::new(-110.0, -245.0));
+    // class-chip key under the store grid (own design; keeps the desc box free)
+    let lg = text(&mut cmd, &f, CLASS_LEGEND, Vec2::new(242.0, -155.0), 11.0, Color::srgb(1.0, 0.92, 0.65), 6.0);
+    cmd.entity(lg).insert(FitBox { max_w: 420.0, max_h: 28.0, base: 11.0, min: 8.0 });
     button(&mut cmd, &a, "ui/button_buy.png", Some("ui/button_buy_0.png"), Vec2::new(425.0, -200.0), Vec2::new(105.0, 45.0), 5.0, Act::Custom(2, 0));
     button(&mut cmd, &a, "ui/button_sell.png", Some("ui/button_sell_0.png"), Vec2::new(315.0, -200.0), Vec2::new(105.0, 45.0), 5.0, Act::Custom(3, 0));
     button(&mut cmd, &a, "ui/kengqian.png", Some("ui/kengqian_0.png"), Vec2::new(398.0, 174.0), Vec2::new(112.0, 40.0), 5.0, Act::Custom(4, 0));
     let rc = data.prices(save.unlocked).map(|p| p.refresh_shop).unwrap_or(70);
     text(&mut cmd, &f, &format!("{rc}"), Vec2::new(322.0, 174.0), 18.0, Color::srgb(1.0, 0.85, 0.3), 6.0);
-    button(&mut cmd, &a, "ui/GETMORE.png", Some("ui/GETMORE_0.png"), Vec2::new(390.0, -275.0), Vec2::new(186.0, 76.0), 5.0, Act::Stub("GET MORE (in-app purchase)"));
+    button(&mut cmd, &a, "ui/GETMORE.png", Some("ui/GETMORE_0.png"), Vec2::new(390.0, -275.0), Vec2::new(186.0, 76.0), 5.0, Act::Stub("GET MORE — more gold & items (not available in this remake)"));
     cmd.insert_resource(StoreSel(None));
     cmd.insert_resource(Rebuild(true));
 }
@@ -117,7 +120,7 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     if rb.0 {
         rb.0 = false;
-        refresh_icons(&mut cmd, &a, &f, &data, &save, sel.0, tab.0, &slots, &icons, &marks);
+        refresh_icons(&mut cmd, &a, &f, &data, &save, sel.0, tab.0, &slots, &icons, &marks, true);
         for e in hl.iter() { cmd.entity(e).despawn(); }
         if let Some(s) = ssel.0 {
             let p = match s { Slot::Shop(i) => Some(grid_pos(SHOP_C, i)), Slot::Stash(i) if i / 15 == tab.0 => Some(grid_pos(STASH_C, i % 15)), _ => None };

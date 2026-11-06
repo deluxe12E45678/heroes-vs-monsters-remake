@@ -95,6 +95,8 @@ struct WaveHud;
 #[derive(Component)]
 struct PartyHud(usize); // roster index into party display rows
 #[derive(Component)]
+struct UnitName(Entity); // over-head enemy name; hidden when the unit is dead
+#[derive(Component)]
 struct PartyHpFill(usize);
 #[derive(Component)]
 struct BoxSel;
@@ -137,7 +139,7 @@ fn spawn_unit_look(cmd: &mut Commands, a: &AssetServer, data: &GameData, sheets:
         let name = if u_enemy >= 0 { data.enemy(u_enemy).name.clone() } else { String::new() };
         if !name.is_empty() {
             let n = cmd.spawn((Text2d::new(name), TextFont { font: a.load::<Font>("fonts/gilsanub.ttf").into(), font_size: bevy::text::FontSize::Px(13.0), ..default() },
-                TextColor(Color::srgb(1.0, 0.85, 0.75)), Transform::from_xyz(0.0, h + 21.0, 5.2))).id();
+                TextColor(Color::srgb(1.0, 0.85, 0.75)), Transform::from_xyz(0.0, h + 21.0, 5.2), UnitName(e))).id();
             cmd.entity(e).add_child(n);
         }
     }
@@ -235,7 +237,7 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
         let u = Unit { side: Side::Hero, trig: h.trigger_rect.as_ref().map(|r| Vec4::new(r.x, r.y, r.z, r.w)).unwrap_or(Vec4::new(80.0, 80.0, 40.0, 40.0)), f: ft, ex, hp: ft.max_hp, atk_cd: 0.5, target: None, forced: None, move_to: None, roster: Some(r), slot: i, enemy: -1,
             level: oh.level, ranged, healer: h.attack_type == AttackType::Buff, range: if h.attack_type == AttackType::Buff { 330.0 } else if ranged { h.trigger_rect.as_ref().map(|r| r.x * 2.0).unwrap_or(330.0) } else { 70.0 }, hatred: h.hatred,
             taunted_by: None, buff: (0, 0, 0.0), skills: test_skill(&data, i).map(|s| vec![s]).unwrap_or_else(|| hero_actives(&data, oh)), dead: false, dead_t: 0.0, team: 0, st: Status::default(), hit_t: 0.5 };
-        let pos = Vec2::new(-330.0 + if ranged { -60.0 } else { 40.0 }, if party.len() > 3 { -20.0 - 72.0 * i as f32 } else { -40.0 - 88.0 * i as f32 });
+        let pos = Vec2::new(-280.0 + if ranged { -70.0 } else { 50.0 }, if party.len() > 3 { -10.0 - 90.0 * i as f32 } else { -20.0 - 110.0 * i as f32 });
         let e = spawn_unit_look(&mut cmd, &a, &data, &sheets, &hero_key(&data, oh.hero), pos, u, Some(crate::anim::hero_look(&data, oh.hero, Some(&oh.equip))));
         if i == 0 { cmd.entity(e).insert(Selected); }
         // (the original has no bottom panel: HP bars over heads, the selected hero's skill in the top-left box)
@@ -256,23 +258,31 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     // wave / enemy counter (own layout; the original only flashes Wave_Incoming between teams)
     let wh = text(&mut cmd, &f, "Wave 1/1", Vec2::new(0.0, 280.0), 22.0, Color::srgb(1.0, 0.95, 0.75), 61.0);
     cmd.entity(wh).insert(WaveHud);
-    // party name + HP strip along the left (own design: original only has over-head HPbars; names help when units stack)
+    // Compact party strip tucked under the skill boxes (own design). Short class codes + FitBox so
+    // "Fighter" never truncates to "Fight"; kept high/left so it never covers units on the field.
     for (i, &r) in party.iter().enumerate() {
         let oh = &save.heroes[r];
-        let name = data.hero(oh.hero).class_name.clone();
-        let y = 180.0 - 48.0 * i as f32;
-        let label = text(&mut cmd, &f, format!("{name}"), Vec2::new(-430.0, y + 12.0), 16.0, Color::srgb(1.0, 0.95, 0.8), 61.0);
-        cmd.entity(label).insert((PartyHud(i), bevy::sprite::Anchor::CENTER_LEFT));
-        image(&mut cmd, &a, "ui/HPbar_bg.png", Vec2::new(-370.0, y - 6.0), Some(Vec2::new(120.0, 10.0)), 61.0);
+        let abbr = match data.hero(oh.hero).class_name.as_str() {
+            "Fighter" => "Fgt", "Barbarian" => "Bar", "Paladin" => "Pal", "Fire Mage" => "FMg",
+            "Ice Mage" => "IMg", "Cleric" => "Clr", "Archer" => "Arc", "Rogue" => "Rog",
+            "Bard" => "Brd", "Shaman" => "Sha", "Summoner" => "Sum", "Elite Fighter" => "EFg",
+            other => other,
+        };
+        let y = 200.0 - 36.0 * i as f32;
+        let label = text(&mut cmd, &f, abbr.to_string(), Vec2::new(-455.0, y + 8.0), 14.0, Color::srgb(1.0, 0.95, 0.8), 61.0);
+        cmd.entity(label).insert((PartyHud(i), bevy::sprite::Anchor::CENTER_LEFT,
+            crate::common::FitBox { max_w: 90.0, max_h: 18.0, base: 14.0, min: 10.0 }));
+        image(&mut cmd, &a, "ui/HPbar_bg.png", Vec2::new(-400.0, y - 8.0), Some(Vec2::new(90.0, 8.0)), 61.0);
         let mut fill = Sprite::from_image(a.load("ui/HPbar_mc.png"));
-        fill.custom_size = Some(Vec2::new(120.0, 10.0));
-        cmd.spawn((fill, Transform::from_translation(Vec3::new(-370.0, y - 6.0, 61.5)), Scr, PartyHpFill(i)));
+        fill.custom_size = Some(Vec2::new(90.0, 8.0));
+        cmd.spawn((fill, Transform::from_translation(Vec3::new(-400.0, y - 8.0, 61.5)), Scr, PartyHpFill(i)));
     }
     // battle speed 1×/2×/3× (own addition; remembered in the save), styled as an item frame like the skill box
     image(&mut cmd, &a, "ui/item.png", Vec2::new(360.0, 280.0), Some(Vec2::splat(64.0)), 60.0);
     hotspot(&mut cmd, Vec2::new(360.0, 280.0), Vec2::splat(64.0), 60.5, Act::Custom(13, 0));
     let sp = text(&mut cmd, &f, format!("x{}", save.battle_speed.max(1)), Vec2::new(360.0, 280.0), 26.0, Color::srgb(1.0, 0.85, 0.3), 61.0);
     cmd.entity(sp).insert(AutoText);
+    text(&mut cmd, &f, "SPD", Vec2::new(360.0, 248.0), 12.0, Color::srgb(0.95, 0.85, 0.55), 61.0);
     // StateMainGamePause: gamepaused title, music / sound tick boxes, RESUME and RETREAT (CampChallenge::RetreatChallenge)
     let po = cmd.spawn((Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.6), SCREEN * 1.3), Transform::from_xyz(0.0, 0.0, 80.0), Visibility::Hidden, Scr, PausedOverlay)).id();
     let mut kids = vec![image(&mut cmd, &a, "ui/gamepaused.png", Vec2::new(0.0, 170.0), None, 1.0)];
@@ -337,6 +347,7 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
                 let e = spawn_unit(&mut cmd, &a, &data, &sheets, &hero_key(&data, hi), p, u);
                 let n = text(&mut cmd, &f, &h.class_name, Vec2::new(0.0, 150.0), 13.0, Color::srgb(1.0, 0.75, 0.6), 5.2);
                 cmd.entity(n).remove::<Scr>();
+                cmd.entity(n).insert(UnitName(e));
                 cmd.entity(e).add_child(n);
             }
         }
@@ -428,7 +439,7 @@ fn input(mut cmd: Commands, keys: Res<ButtonInput<KeyCode>>, mouse: Res<ButtonIn
          mut clicked: ResMut<Clicked>, mut vt: ResMut<Time<Virtual>>, mut next: ResMut<NextState<AppState>>,
          mut units: Query<(Entity, &mut Unit, &Transform)>, sel: Query<Entity, With<Selected>>, hots: Query<(Entity, &Hot, &GlobalTransform, &InheritedVisibility)>,
          mut boxq: Query<(&mut Sprite, &mut Transform), (With<BoxSel>, Without<Unit>)>, mut ov: Query<&mut Visibility, With<PausedOverlay>>, mut casts: Local<Vec<(usize, usize)>>,
-         (mut sfx, mut save, ticks): (ResMut<crate::audio::Sfx>, ResMut<Save>, Query<(&PauseTick, Entity)>), mut viz: Query<(&DragViz, &mut Sprite, &mut Transform, &mut Visibility), (Without<Unit>, Without<BoxSel>, Without<PausedOverlay>)>) {
+         (mut sfx, mut save, ticks, mut toast): (ResMut<crate::audio::Sfx>, ResMut<Save>, Query<(&PauseTick, Entity)>, ResMut<Toast>), mut viz: Query<(&DragViz, &mut Sprite, &mut Transform, &mut Visibility), (Without<Unit>, Without<BoxSel>, Without<PausedOverlay>)>) {
     if run.outro.is_some() { return; }
     let mut toggle_pause = keys.just_pressed(KeyCode::KeyP);
     let mut speed_up = keys.just_pressed(KeyCode::KeyF);
@@ -449,7 +460,10 @@ fn input(mut cmd: Commands, keys: Res<ButtonInput<KeyCode>>, mouse: Res<ButtonIn
         }
     }
     if toggle_pause { if vt.is_paused() { vt.unpause() } else { vt.pause() } }
-    if speed_up { save.battle_speed = save.battle_speed % 3 + 1; save.write(); sfx.play("sfx_select"); }
+    if speed_up {
+        save.battle_speed = save.battle_speed % 3 + 1; save.write(); sfx.play("sfx_select");
+        toast.0 = Some((format!("Battle speed ×{}", save.battle_speed), 1.2));
+    }
     vt.set_relative_speed(save.battle_speed.clamp(1, 3) as f32);
     if let Ok(mut v) = ov.single_mut() { *v = if vt.is_paused() { Visibility::Visible } else { Visibility::Hidden }; }
     if keys.just_pressed(KeyCode::Escape) { next.set(AppState::WorldMap); return; }
@@ -862,8 +876,8 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
         let mut push = Vec2::ZERO;
         // no sliding while an attack / skill animation plays
         let busy = ch.iter().find_map(|c| anims.get(c).ok()).map(|a| a.once && !a.done).unwrap_or(false);
-        for (o, op, od) in &pos { if *o != e && !od { let d = p - *op; let l = d.length(); if l < 52.0 && l > 0.01 { push += d / l * (52.0 - l); } } }
-        let mut np = if busy { p } else { p + push * 0.35 };
+        for (o, op, od) in &pos { if *o != e && !od { let d = p - *op; let l = d.length(); if l < 72.0 && l > 0.01 { push += d / l * (72.0 - l); } } }
+        let mut np = if busy { p } else { p + push * 0.45 };
         let minx = if u.side == Side::Enemy { FIELD_MIN.x } else { FIELD_MIN.x };
         let maxx = if u.side == Side::Enemy { 560.0 } else { FIELD_MAX.x };
         np = np.clamp(Vec2::new(minx, FIELD_MIN.y), Vec2::new(maxx, FIELD_MAX.y));
@@ -993,7 +1007,8 @@ fn projectiles(mut cmd: Commands, time: Res<Time>, f: Res<Fonts>, mut run: ResMu
 }
 
 fn effects(mut cmd: Commands, time: Res<Time>, mut fl: Query<(Entity, &mut Floating, &mut Transform)>, units: Query<(Entity, &Unit)>,
-           mut fills: Query<(&HpFill, &mut Sprite, &mut Transform), Without<Floating>>, mut rings: Query<(&Ring, &mut Visibility)>, sel: Query<(), With<Selected>>) {
+           mut fills: Query<(&HpFill, &mut Sprite, &mut Transform), Without<Floating>>, mut rings: Query<(&Ring, &mut Visibility)>, sel: Query<(), With<Selected>>,
+           mut names: Query<(&UnitName, &mut Visibility), Without<Ring>>) {
     let dt = time.delta_secs();
     for (e, mut f, mut t) in fl.iter_mut() {
         if f.0 < 0.0 { f.0 += dt; if f.0 >= 0.0 { cmd.entity(e).despawn(); } continue; } // banners: fixed, negative ttl
@@ -1007,6 +1022,11 @@ fn effects(mut cmd: Commands, time: Res<Time>, mut fl: Query<(Entity, &mut Float
             t.translation.x = -h.w * (1.0 - r) / 2.0;
             if u.dead { s.custom_size = Some(Vec2::ZERO); }
         }
+    }
+        for (n, mut v) in names.iter_mut() {
+        let dead = units.get(n.0).map(|(_, u)| u.dead).unwrap_or(true);
+        let want = if dead { Visibility::Hidden } else { Visibility::Inherited };
+        if *v != want { *v = want; }
     }
     for (r, mut v) in rings.iter_mut() {
         let on = sel.get(r.0).is_ok() && units.get(r.0).map(|(_, u)| !u.dead).unwrap_or(false);
@@ -1042,36 +1062,46 @@ fn hud(run: Res<Run>, setup: Res<BattleSetup>, data: Res<GameData>,
         s.custom_size = Some(Vec2::new(66.0, 66.0 * r));
     }
     if let Ok(mut t) = at.single_mut() { let s = format!("x{}", save.battle_speed.clamp(1, 3)); if t.0 != s { t.0 = s; } }
-    // wave / enemy counter
+    // wave / enemy counter — omit "Enemies 0" before the first spawn / between waves
     if let Ok(mut t) = wave_t.single_mut() {
         let alive = units.iter().filter(|u| u.side == Side::Enemy && !u.dead).count();
+        let enem = if alive > 0 { format!("  Enemies {alive}") } else { String::new() };
         let s = if setup.survival {
-            format!("Wave {}  Enemies {}", run.surv_waves.max(0) + 1, alive)
+            format!("Wave {}{enem}", run.surv_waves.max(0) + 1)
         } else if let Some(mw) = data.waves.maps.get(&setup.map) {
             let total = mw.teams.len().max(1);
             let cur = (run.team + 1).min(total);
-            format!("Wave {cur}/{total}  Enemies {alive}")
-        } else {
+            format!("Wave {cur}/{total}{enem}")
+        } else if alive > 0 {
             format!("Enemies {alive}")
+        } else {
+            String::new()
         };
         if t.0 != s { t.0 = s; }
     }
-    // party HP fills + dead greying of names
+    // party HP fills; dead heroes drop their name from the strip
     for (ph, mut tx) in party_t.iter_mut() {
         let u = units.iter().find(|u| u.side == Side::Hero && u.slot == ph.0);
         if let Some(u) = u {
-            let name = save.party.get(ph.0).and_then(|&r| save.heroes.get(r)).map(|oh| data.hero(oh.hero).class_name.clone()).unwrap_or_default();
-            let s = if u.dead { format!("{name}  KO") } else { format!("{name}  {:.0}/{:.0}", u.hp, u.f.max_hp) };
+            let abbr = save.party.get(ph.0).and_then(|&r| save.heroes.get(r)).map(|oh| {
+                match data.hero(oh.hero).class_name.as_str() {
+                    "Fighter" => "Fgt", "Barbarian" => "Bar", "Paladin" => "Pal", "Fire Mage" => "FMg",
+                    "Ice Mage" => "IMg", "Cleric" => "Clr", "Archer" => "Arc", "Rogue" => "Rog",
+                    "Bard" => "Brd", "Shaman" => "Sha", "Summoner" => "Sum", "Elite Fighter" => "EFg",
+                    other => other,
+                }.to_string()
+            }).unwrap_or_default();
+            let s = if u.dead { String::new() } else { format!("{abbr} {:.0}/{:.0}", u.hp, u.f.max_hp) };
             if tx.0 != s { tx.0 = s; }
         }
     }
     for (ph, mut sp, mut tr) in party_hp.iter_mut() {
         let u = units.iter().find(|u| u.side == Side::Hero && u.slot == ph.0);
         let r = u.map(|u| if u.dead { 0.0 } else { (u.hp / u.f.max_hp).clamp(0.0, 1.0) }).unwrap_or(0.0);
-        let w = 120.0 * r;
-        sp.custom_size = Some(Vec2::new(w, 10.0));
-        // keep the fill left-aligned inside the 120px bg centred at -370
-        tr.translation.x = -370.0 - (120.0 - w) / 2.0;
+        let w = 90.0 * r;
+        sp.custom_size = Some(Vec2::new(w, 8.0));
+        // keep the fill left-aligned inside the 90px bg centred at -400
+        tr.translation.x = -400.0 - (90.0 - w) / 2.0;
     }
 }
 
@@ -1313,8 +1343,8 @@ fn outro(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     let clear = |cmd: &mut Commands, st: u8| for (e, el) in &els { if el.0 == st { cmd.entity(e).despawn(); } };
     let z = 60.0;
-    // stage times: banner 0.5, results 3.0, exp 5.0, walk off 7.5, leave 9.5 (a loss: banner then leave at 4.0)
-    let advance = match o.stage { 0 => 0.5, 1 => if o.won { 3.0 } else { 4.0 }, 2 => 5.0, 3 => 7.5, _ => 9.5 };
+    // stage times: banner 0.5, results 5.0 (longer so rewards are readable), exp 7.0, walk off 9.5, leave 11.5
+    let advance = match o.stage { 0 => 0.5, 1 => if o.won { 5.0 } else { 4.0 }, 2 => 7.0, 3 => 9.5, _ => 11.5 };
     if o.t >= advance {
         match o.stage {
             0 => {
@@ -1373,7 +1403,7 @@ fn outro(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     // exp fill: from the old ratio to the new one over 1.5 s, wrapping once per level gained (sfx_levelup each wrap)
     if o.stage == 3 {
-        let k = ((o.t - 5.0) / 1.5).clamp(0.0, 1.0);
+        let k = ((o.t - 7.0) / 1.5).clamp(0.0, 1.0);
         for (fi, mut s, mut t) in &mut fills {
             let Some(b) = o.bars.get(fi.0) else { continue };
             let total = b.levels as f32 + b.to - b.from;

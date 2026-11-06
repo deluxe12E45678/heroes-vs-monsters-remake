@@ -91,7 +91,7 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     for i in 0..15 { slot_tile(&mut cmd, &a, Slot::Stash(i), bag_pos(i), "ui/item.png", 3.0); }
     bag_tabs(&mut cmd, &a, &f, 0, save.bag_tabs as usize);
     desc_box(&mut cmd, &a, &f, Vec2::new(-110.0, -245.0));
-    button(&mut cmd, &a, "ui/GETMORE.png", Some("ui/GETMORE_0.png"), Vec2::new(390.0, -275.0), Vec2::new(186.0, 76.0), 5.0, Act::Stub("GET MORE (in-app purchase)"));
+    button(&mut cmd, &a, "ui/GETMORE.png", Some("ui/GETMORE_0.png"), Vec2::new(390.0, -275.0), Vec2::new(186.0, 76.0), 5.0, Act::Stub("GET MORE — more gold & items (not available in this remake)"));
     // button_states (silhouette) on the parchment's top-right flips it to equipments_0 with the hero's attributes
     // (UserHeroAttrGameObject); button_states_0 (arrow) flips back
     let b = button(&mut cmd, &a, "ui/button_states.png", None, Vec2::new(-60.0, 126.0), Vec2::new(102.0, 80.0), 4.8, Act::Custom(2, 0));
@@ -199,7 +199,7 @@ fn logic(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     if rb.0 {
         rb.0 = false;
-        refresh_icons(&mut cmd, &a, &f, &data, &save, r, tab.0, &slots, &icons, &marks);
+        refresh_icons(&mut cmd, &a, &f, &data, &save, r, tab.0, &slots, &icons, &marks, !*page_on);
         for e in fig.iter() { cmd.entity(e).despawn(); }
         let e = crate::anim::hero_figure(&mut cmd, &data, &sheets, &save.heroes[r], PARCH + Vec2::new(0.0, -81.0), 125.0, 3.5);
         cmd.entity(e).insert(HeroFig);

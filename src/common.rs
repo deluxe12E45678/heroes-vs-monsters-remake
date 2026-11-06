@@ -73,12 +73,34 @@ pub fn classes_for_item(data: &GameData, id: i32) -> Vec<String> {
     out
 }
 
+/// Compact chip for a tile (≤ ~70 px wide): "All", up to 3 single-letter codes, or "N cls".
+pub fn class_marker_chip(data: &GameData, id: i32) -> String {
+    let v = classes_for_item(data, id);
+    if v.is_empty() { return String::new(); }
+    if v.len() == 1 && v[0] == "All" { return "All".into(); }
+    if v.len() <= 3 {
+        v.iter().map(|s| s.chars().next().unwrap_or('?').to_string()).collect::<Vec<_>>().join("")
+    } else {
+        format!("{}cls", v.len())
+    }
+}
+
+/// Full readable class list for descriptions / legend detail (not drawn on every tile).
 pub fn class_marker_line(data: &GameData, id: i32) -> String {
     let v = classes_for_item(data, id);
     if v.is_empty() { return String::new(); }
     if v.len() == 1 && v[0] == "All" { return "All classes".into(); }
-    v.join("·")
+    // expand abbrs back for the description
+    let full: Vec<&str> = v.iter().map(|a| match a.as_str() {
+        "Fgt" => "Fighter", "Bar" => "Barbarian", "Pal" => "Paladin", "FMg" => "Fire Mage",
+        "IMg" => "Ice Mage", "Clr" => "Cleric", "Arc" => "Archer", "Rog" => "Rogue",
+        "Brd" => "Bard", "Sha" => "Shaman", "Sum" => "Summoner", "EFg" => "Elite Fighter",
+        "All" => "All", other => other,
+    }).collect();
+    full.join(", ")
 }
+
+pub const CLASS_LEGEND: &str = "F Fighter · B Barb · P Pal · C Cleric · A Archer · R Rogue · M Mage · D Bard · All=any";
 
 /// Item tile: frame + icon (icons/item_<tex_index>.png).
 pub fn item_icon_path(data: &GameData, id: i32) -> Option<String> {
@@ -194,10 +216,11 @@ pub fn slot_item(save: &Save, hero: usize, s: Slot) -> Option<i32> {
     }
 }
 
-/// Re-create icons on top of every visible ItemSlot (cheap: ≤60 sprites), plus class-restriction chips.
+/// Re-create icons on top of every visible ItemSlot, plus compact class chips.
+/// `show_marks` is false on the Equip STATS page so chips never cover the attribute table.
 pub fn refresh_icons(cmd: &mut Commands, a: &AssetServer, f: &Fonts, data: &GameData, save: &Save, hero: usize, tab: usize,
                      slots: &Query<(&ItemSlot, &Transform)>, icons: &Query<Entity, With<ItemIcon>>,
-                     marks: &Query<Entity, With<ClassMark>>) {
+                     marks: &Query<Entity, With<ClassMark>>, show_marks: bool) {
     for e in icons.iter() { cmd.entity(e).despawn(); }
     for e in marks.iter() { cmd.entity(e).despawn(); }
     for (s, t) in slots.iter() {
@@ -208,12 +231,18 @@ pub fn refresh_icons(cmd: &mut Commands, a: &AssetServer, f: &Fonts, data: &Game
                 sp.custom_size = Some(Vec2::splat(66.0));
                 cmd.spawn((sp, Transform::from_translation(t.translation + Vec3::Z), Scr, ItemIcon(real)));
             }
-            let line = class_marker_line(data, id);
-            if !line.is_empty() {
-                let n = line.chars().filter(|c| *c == '·').count() + 1;
-                let size = if n <= 3 { 11.0 } else if n <= 5 { 9.0 } else { 8.0 };
-                let e = text(cmd, f, line, t.translation.truncate() + Vec2::new(0.0, -34.0), size, Color::srgb(1.0, 0.92, 0.55), t.translation.z + 2.0);
-                cmd.entity(e).insert(ClassMark);
+            if show_marks {
+                let chip = class_marker_chip(data, id);
+                if !chip.is_empty() {
+                    // dark pill behind the letters so they stay readable and never spill into neighbours
+                    let w = (chip.len() as f32 * 7.5 + 10.0).min(70.0);
+                    let mut bg = Sprite::from_color(Color::srgba(0.08, 0.05, 0.02, 0.85), Vec2::new(w, 14.0));
+                    bg.custom_size = Some(Vec2::new(w, 14.0));
+                    let b = cmd.spawn((bg, Transform::from_translation(t.translation + Vec3::new(0.0, -32.0, 1.5)), Scr, ClassMark)).id();
+                    let _ = b;
+                    let e = text(cmd, f, chip, t.translation.truncate() + Vec2::new(0.0, -32.0), 11.0, Color::srgb(1.0, 0.92, 0.55), t.translation.z + 2.0);
+                    cmd.entity(e).insert(ClassMark);
+                }
             }
         }
     }

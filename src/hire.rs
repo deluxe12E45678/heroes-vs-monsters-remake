@@ -79,7 +79,8 @@ fn rebuild(cmd: &mut Commands, a: &AssetServer, f: &Fonts, data: &GameData, shee
         }
         let owned = save.heroes.iter().filter(|o| o.hero == h).count();
         let hd = data.hero(h);
-        let t = cmd.spawn((Text2d::new(format!("{}\n{} {}{}", hd.class_name, hd.price, "gold", if owned > 0 { format!("  ×{owned}") } else { String::new() })),
+        let price = if owned > 0 { format!("{}\n{} gold\n(you have {})", hd.class_name, hd.price, owned) } else { format!("{}\n{} gold", hd.class_name, hd.price) };
+        let t = cmd.spawn((Text2d::new(price),
             TextFont { font: f.main.clone().into(), font_size: bevy::text::FontSize::Px(20.0), ..default() },
             TextColor(if sel.hero == h { Color::srgb(1.0, 0.9, 0.3) } else { Color::WHITE }), Transform::from_xyz(0.0, 110.0, 3.0))).id();
         cmd.entity(card).add_child(t);
