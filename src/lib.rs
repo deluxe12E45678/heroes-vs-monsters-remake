@@ -26,6 +26,8 @@ mod store;
 mod types;
 mod ui;
 mod worldmap;
+#[cfg(target_os = "windows")]
+mod win_focus;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -46,9 +48,9 @@ pub fn main() {
         if let Ok(l) = l.parse::<i32>() { for h in &mut save.heroes { h.level = l; } }
     }
     let mut app = App::new();
-    // PC: always windowed + Normal z-order + focused:false so launching never steals focus from a
-    // maximized program the user is in (and autotest/HVSM_AUTOTEST runs never need focus either).
-    // Android stays immersive borderless-fullscreen (the activity focuses as usual).
+    // PC: windowed, Normal z-order, focused:false → winit uses SW_SHOWNOACTIVATE (and win_focus
+    // re-asserts it). Never AlwaysOnTop. Avoids minimizing exclusive-fullscreen games (LoL).
+    // Android stays immersive borderless-fullscreen.
     let win = Window {
         mode: if cfg!(target_os = "android") {
             bevy::window::WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Primary)
@@ -64,6 +66,7 @@ pub fn main() {
             WindowResolution::new(w, h)
         },
         focused: cfg!(target_os = "android"),
+        visible: true,
         window_level: bevy::window::WindowLevel::Normal,
         ..default()
     };
@@ -95,6 +98,8 @@ pub fn main() {
         .add_systems(Update, (ui::hover_labels, ui::toast_system, anim::animate, anim::build_rigs, anim::pose_rigs.after(anim::animate),
                               audio::focus_audio, audio::play_sfx, common::update_gold, common::fit_desc, state_music, fit_camera).chain())
         .add_plugins((menu::plugin, inn::plugin, hire::plugin, worldmap::plugin, store::plugin, equip::plugin, skills::plugin, battle::plugin, result::plugin, autotest::plugin, options::plugin, arena::plugin, siege::plugin, summon::plugin, slots::plugin));
+    #[cfg(target_os = "windows")]
+    app.add_plugins(win_focus::plugin);
     // PreStartup runs before the initial state's OnEnter. (Spawning these before app.run(), i.e. before the render
     // plugins finished, desynced the render world: sprites were drawn with other entities' transforms.)
     app.add_systems(PreStartup, (setup, anim::setup_sheets));

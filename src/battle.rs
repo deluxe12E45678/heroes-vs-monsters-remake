@@ -564,14 +564,9 @@ fn input(mut cmd: Commands, keys: Res<ButtonInput<KeyCode>>, mouse: Res<ButtonIn
                 // with heroes selected, a click on an enemy is always an attack order (enemies win over overlapping heroes)
                 order(p, &mut units, &sel);
                 sfx.play("sfx_select");
-            } else if let Some(e) = pick(p, &units, Side::Hero).filter(|&e| {
-                // with a healer selected, clicking another ally sets her heal focus (yellow arrow_heal) instead of selecting it
-                let healers: Vec<Entity> = sel.iter().filter(|&h| h != e && units.get(h).is_ok_and(|(_, u, _)| u.healer)).collect();
-                if healers.is_empty() { return true; }
-                for h in healers { if let Ok((_, mut u, _)) = units.get_mut(h) { u.forced = Some(e); u.move_to = None; } }
-                sfx.play("sfx_select");
-                false
-            }) {
+            } else if let Some(e) = pick(p, &units, Side::Hero) {
+                // Always allow selecting any hero (tutorial + normal). Heal targeting is by dragging
+                // the healer onto an ally (drag_kind), not by swallowing the next tap.
                 if !shift { for o in sel.iter() { cmd.entity(o).remove::<Selected>(); } }
                 cmd.entity(e).insert(Selected);
                 sfx.play("sfx_select");
@@ -868,19 +863,13 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
         }
         let _ = side;
     }
-    // separation + bounds
-    let pos: Vec<(Entity, Vec2, bool)> = q.iter().map(|(e, u, t, _)| (e, t.translation.truncate(), u.dead)).collect();
-    for (e, u, mut t, ch) in q.iter_mut() {
+    // Field bounds + draw order only. No separation/push between units — the original lets
+    // melee fighters overlap so they can close and hit; blocking destroyed that.
+    for (_e, u, mut t, _ch) in q.iter_mut() {
         if u.dead { continue; }
         let p = t.translation.truncate();
-        let mut push = Vec2::ZERO;
-        // no sliding while an attack / skill animation plays
-        let busy = ch.iter().find_map(|c| anims.get(c).ok()).map(|a| a.once && !a.done).unwrap_or(false);
-        for (o, op, od) in &pos { if *o != e && !od { let d = p - *op; let l = d.length(); if l < 72.0 && l > 0.01 { push += d / l * (72.0 - l); } } }
-        let mut np = if busy { p } else { p + push * 0.45 };
-        let minx = if u.side == Side::Enemy { FIELD_MIN.x } else { FIELD_MIN.x };
         let maxx = if u.side == Side::Enemy { 560.0 } else { FIELD_MAX.x };
-        np = np.clamp(Vec2::new(minx, FIELD_MIN.y), Vec2::new(maxx, FIELD_MAX.y));
+        let np = p.clamp(Vec2::new(FIELD_MIN.x, FIELD_MIN.y), Vec2::new(maxx, FIELD_MAX.y));
         t.translation.x = np.x; t.translation.y = np.y;
         t.translation.z = 10.0 - np.y * 0.01; // lower = in front
     }

@@ -1,6 +1,6 @@
 [package]
 name = "hvsm_proto"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 
 [lib]
@@ -56,3 +56,9 @@ config_changes = "orientation|screenSize|screenLayout|keyboardHidden|uiMode"
 opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
+
+# Soft-show the window on Windows without activating (SW_SHOWNOACTIVATE) so launching
+# does not minimize exclusive-fullscreen games like League of Legends.
+[target.'cfg(target_os = "windows")'.dependencies]
+raw-window-handle = "0.6"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
