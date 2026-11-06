@@ -264,11 +264,17 @@ pub struct FxAnim {
     pub z: f32,
 }
 
+/// Display scale for FX strips. Sheets are half-res ACB (same pipeline as unit sprites).
+/// Unit sprites use SCALE=1.6; FX stay at 1.0 so on-screen size matches original gameplay
+/// footage (PAQEh3KoHm4 / mSTSrkz-Je8): skill bursts ≈2.5× unit height. CreateEffect in the
+/// .so applies no extra SetScale — ACB sx/sy only — so half-res@1.0 ≈ video after unit SCALE.
+pub const FX_SCALE: f32 = 1.0;
+
 pub fn spawn_fx(cmd: &mut Commands, fx: &FxSheets, name: &str, pos: Vec2, z: f32, once: bool, life: f32, follow: Option<Entity>) -> Option<Entity> {
     let info = fx.info.get(name)?;
     let img = fx.images.get(name)?.clone();
     let layout = fx.layouts.get(name)?.clone();
-    let (w, h) = (info.cell.0 as f32, info.cell.1 as f32);
+    let (w, h) = (info.cell.0 as f32 * FX_SCALE, info.cell.1 as f32 * FX_SCALE);
     let mut s = Sprite::from_atlas_image(img, TextureAtlas { layout, index: 0 });
     s.custom_size = Some(Vec2::new(w, h));
     // anchor is feet-ish inside cell; center the sprite roughly
