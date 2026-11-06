@@ -1177,21 +1177,24 @@ fn hud(run: Res<Run>, setup: Res<BattleSetup>, data: Res<GameData>,
 }
 
 
-/// SceneMainGameMachine::AddGameOverScene FallDown roll:
-/// pick one entry from *EquipNumber uniformly as count; that many times pick from *EquipIndex (and level list unused in our stash).
-fn roll_fall_down(node: &crate::data::MapNode, boss: bool) -> Vec<i32> {
+/// SceneMainGameMachine::AddGameOverScene FallDown roll (WorldMoveMap.xml):
+/// 1) pick one entry from *EquipNumber uniformly → drop count
+/// 2) that many times: pick uniformly from *EquipIndex (skip unknown ids)
+/// 3) original also rolls *EquipLevel into the item instance; our stash is id-only so levels are not stored yet
+///    (nodes 1–8 use levels 0..5; bosses are almost always level 0).
+fn roll_fall_down(node: &crate::data::MapNode, boss: bool, data: &GameData) -> Vec<i32> {
     let (idxs, nums) = if boss {
         (&node.boss_drops, &node.boss_drop_numbers)
     } else {
         (&node.normal_drops, &node.normal_drop_numbers)
     };
-    if idxs.is_empty() || nums.is_empty() { return vec![]; }
+    let pool: Vec<i32> = idxs.iter().copied().filter(|&id| id >= 0 && data.item(id).is_some()).collect();
+    if pool.is_empty() || nums.is_empty() { return vec![]; }
     let count = nums[fastrand::usize(..nums.len())];
     if count <= 0 { return vec![]; }
     let mut out = Vec::with_capacity(count as usize);
     for _ in 0..count {
-        let id = idxs[fastrand::usize(..idxs.len())];
-        if id >= 0 { out.push(id); }
+        out.push(pool[fastrand::usize(..pool.len())]);
     }
     out
 }
@@ -1243,14 +1246,21 @@ fn end_check(mut run: ResMut<Run>, units: Query<&Unit>, ents: Query<(Entity, &Un
         }
     }
     let mut loot = vec![];
-    if setup.tutorial && won { // GuideConfig.xml FirstFightReward: money 1000, exp 100, equip 504
+    if setup.tutorial && won { // GuideConfig.xml FirstFightReward: money="1000" exp="100" equip="1 504"
         save.tutorial_done = true;
-        if let (Some(it), Some(s)) = (data.item(504), save.first_free_stash()) { save.stash[s] = Some(504); loot.push(504); lines.push(format!("Reward: {}", it.name)); }
+        for &id in &[1, 504] {
+            if data.item(id).is_none() { continue; }
+            if let Some(s) = save.first_free_stash() {
+                save.stash[s] = Some(id);
+                loot.push(id);
+                if let Some(it) = data.item(id) { lines.push(format!("Reward: {}", it.name)); }
+            }
+        }
     }
     // WorldMoveMap FallDown → bag (original AddGameOverScene). Tutorial has its fixed reward; arena/siege/survival use their own tables.
     if won && !setup.tutorial && setup.arena.is_none() && setup.siege.is_none() && !setup.survival {
         if let Some(node) = data.world.nodes.get(setup.node as usize) {
-            for id in roll_fall_down(node, setup.boss) {
+            for id in roll_fall_down(node, setup.boss, &data) {
                 if data.item(id).is_none() { continue; }
                 if let Some(s) = save.first_free_stash() {
                     save.stash[s] = Some(id);

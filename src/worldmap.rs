@@ -251,19 +251,31 @@ fn offer_battle(roam: &mut Roam, setup: BattleSetup, mark: Option<(Vec2, MarkKin
     let lv = if avg.fract() == 0.0 { format!("{avg:.0}") } else { format!("{avg:.1}") };
     let t = text(cmd, f, lv, c + Vec2::new(dx, 126.0), 24.0, Color::srgb(1.0, 0.95, 0.75), 84.0);
     cmd.entity(t).insert((PromptEl, bevy::sprite::Anchor::CENTER_LEFT));
-    // Usually Drops: the parchment bakes in "Usually Drops: ???" + a ? box; overlay real icons from
-    // WorldMoveMap.xml <FallDown> (normalEquipIndex / bossEquipIndex) over that row.
+    // Usually Drops: parchment bakes in "Usually Drops: ???" + a ? box; overlay real icons from
+    // WorldMoveMap.xml <FallDown>. Hide icons when *EquipNumber is all zeros (nodes 9–15 normals
+    // never drop — showing the index pool was misleading). Sample evenly across the pool so every
+    // area doesn't show the same first-five Waraxe/Warhammer row.
     let node = data.world.nodes.get(setup.node as usize);
     let drops: Vec<i32> = node.map(|n| {
-        let src = if setup.boss || banner.starts_with("Boss") { &n.boss_drops } else { &n.normal_drops };
-        src.iter().copied().filter(|&id| data.item(id).is_some()).collect()
+        let boss = setup.boss || banner.starts_with("Boss");
+        let (src, nums) = if boss { (&n.boss_drops, &n.boss_drop_numbers) } else { (&n.normal_drops, &n.normal_drop_numbers) };
+        if nums.is_empty() || nums.iter().all(|&c| c <= 0) { return vec![]; }
+        src.iter().copied().filter(|&id| id >= 0 && data.item(id).is_some()).collect()
     }).unwrap_or_default();
-    // pick up to 5 distinct icons; centre them on the parchment's drops row (~y = c.y - 10)
+    // up to 5 distinct icons, evenly spaced through the pool
     let mut shown = Vec::new();
-    for id in drops {
-        if shown.contains(&id) { continue; }
-        shown.push(id);
-        if shown.len() == 5 { break; }
+    if !drops.is_empty() {
+        let n_show = drops.len().min(5);
+        for i in 0..n_show {
+            let idx = i * drops.len() / n_show;
+            let id = drops[idx];
+            if !shown.contains(&id) { shown.push(id); }
+        }
+        // fill if spacing collided
+        for &id in &drops {
+            if shown.len() >= 5 { break; }
+            if !shown.contains(&id) { shown.push(id); }
+        }
     }
     if !shown.is_empty() {
         let n = shown.len() as f32;
