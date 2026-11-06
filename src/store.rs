@@ -42,8 +42,8 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     tabs(&mut cmd, &a, &f, STASH_C, 0, 1, save.bag_tabs as usize);
     desc_box(&mut cmd, &a, &f, Vec2::new(-110.0, -245.0));
     // class-chip key under the store grid (own design; keeps the desc box free)
-    let lg = text(&mut cmd, &f, CLASS_LEGEND, Vec2::new(242.0, -155.0), 11.0, Color::srgb(1.0, 0.92, 0.65), 6.0);
-    cmd.entity(lg).insert(FitBox { max_w: 420.0, max_h: 28.0, base: 11.0, min: 8.0 });
+    let lg = text(&mut cmd, &f, CLASS_LEGEND, Vec2::new(242.0, -168.0), 10.0, Color::srgb(1.0, 0.92, 0.65), 6.0);
+    cmd.entity(lg).insert(FitBox { max_w: 400.0, max_h: 26.0, base: 10.0, min: 7.5 });
     button(&mut cmd, &a, "ui/button_buy.png", Some("ui/button_buy_0.png"), Vec2::new(425.0, -200.0), Vec2::new(105.0, 45.0), 5.0, Act::Custom(2, 0));
     button(&mut cmd, &a, "ui/button_sell.png", Some("ui/button_sell_0.png"), Vec2::new(315.0, -200.0), Vec2::new(105.0, 45.0), 5.0, Act::Custom(3, 0));
     button(&mut cmd, &a, "ui/kengqian.png", Some("ui/kengqian_0.png"), Vec2::new(398.0, 174.0), Vec2::new(112.0, 40.0), 5.0, Act::Custom(4, 0));

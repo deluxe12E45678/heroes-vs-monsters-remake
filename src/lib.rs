@@ -78,6 +78,7 @@ pub fn main() {
         .insert_resource(save)
         .init_resource::<ui::Fonts>()
         .init_resource::<anim::Sheets>()
+        .init_resource::<anim::FxSheets>()
         .init_resource::<ui::Cursor>()
         .init_resource::<ui::TouchPos>()
         .init_resource::<ui::Clicked>()
@@ -93,12 +94,12 @@ pub fn main() {
         // ever sees its own Custom codes. Previously a screen could drain the queue before generic_actions ran and swallow
         // BACK/PLAY clicks at random.
         .add_systems(PreUpdate, (ui::touch_to_mouse, ui::track_cursor, ui::click_system, ui::generic_actions).chain().after(bevy::input::InputSystems))
-        .add_systems(Update, (ui::hover_labels, ui::toast_system, anim::animate, anim::build_rigs, anim::pose_rigs.after(anim::animate),
+        .add_systems(Update, (ui::hover_labels, ui::toast_system, anim::animate, anim::animate_fx, anim::build_rigs, anim::pose_rigs.after(anim::animate),
                               audio::focus_audio, audio::play_sfx, common::update_gold, common::fit_desc, state_music, fit_camera).chain())
         .add_plugins((menu::plugin, inn::plugin, hire::plugin, worldmap::plugin, store::plugin, equip::plugin, skills::plugin, battle::plugin, result::plugin, autotest::plugin, options::plugin, arena::plugin, siege::plugin, summon::plugin, slots::plugin));
     // PreStartup runs before the initial state's OnEnter. (Spawning these before app.run(), i.e. before the render
     // plugins finished, desynced the render world: sprites were drawn with other entities' transforms.)
-    app.add_systems(PreStartup, (setup, anim::setup_sheets));
+    app.add_systems(PreStartup, (setup, anim::setup_sheets, anim::setup_fx));
     app.run();
 }
 
@@ -204,6 +205,7 @@ mod tests {
         let v = stats::learned_actives(&d, &ar);
         assert_eq!(v[0].0.attrs[0].data, Some(65.0));
         let mut cl = save::Save::new_hero(4, Some(5));
+        cl.skills.insert(5, 1); // Healing Circle (active, heal_circle VFX)
         cl.skills.insert(211, 1); // Quick Healing Circle: -1 s cooldown
         let base = d.skill(5).unwrap().cd_ms.unwrap() as f32 / 1000.0;
         assert_eq!(stats::learned_actives(&d, &cl)[0].1, base - 1.0);

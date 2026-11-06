@@ -3,6 +3,7 @@
 //! every frame of the original .acb animations.
 use crate::{data::GameData, ui::Scr};
 use bevy::prelude::*;
+use serde::Deserialize;
 use std::collections::HashMap;
 
 pub const FPS: f32 = 24.0; // AnimationType.xml rate="24"; sheets now keep every frame (the original plays baked frames, no runtime tweening)
@@ -221,6 +222,97 @@ pub fn pose_rigs(a: Res<AssetServer>, roots: Query<(&Anim, &RigRoot, &Children)>
             t.translation = Vec3::new(f[0], f[1], f[5] * 0.001);
             t.rotation = Quat::from_rotation_z(f[4]);
             t.scale = Vec3::new(f[2] * 0.5, f[3] * 0.5, 1.0);
+        }
+    }
+}
+
+/// Skill / hit VFX sheets from EffectList.xml ACB → assets/fx/*.png (see anim/export via proto assets/fx).
+#[derive(Debug, Clone, Deserialize)]
+pub struct FxInfo { pub cell: (u32, u32), pub frames: u32, pub anchor: (f32, f32) }
+
+#[derive(Resource, Default)]
+pub struct FxSheets {
+    pub info: HashMap<String, FxInfo>,
+    pub layouts: HashMap<String, Handle<TextureAtlasLayout>>,
+    pub images: HashMap<String, Handle<Image>>,
+}
+
+pub fn setup_fx(a: Res<AssetServer>, mut layouts: ResMut<Assets<TextureAtlasLayout>>, mut fx: ResMut<FxSheets>) {
+    let Ok(s) = crate::data::read_text("fx/manifest.json") else { eprintln!("fx/manifest.json missing"); return };
+    let Ok(man): Result<HashMap<String, FxInfo>, _> = serde_json::from_str(&s) else { eprintln!("fx manifest parse fail"); return };
+    for (k, info) in man {
+        let path = format!("fx/{k}.png");
+        if !crate::data::asset_exists(&path) { continue; }
+        let l = TextureAtlasLayout::from_grid(UVec2::new(info.cell.0, info.cell.1), info.frames, 1, None, None);
+        fx.layouts.insert(k.clone(), layouts.add(l));
+        fx.images.insert(k.clone(), a.load(path));
+        fx.info.insert(k, info);
+    }
+    eprintln!("fx sheets loaded: {}", fx.info.len());
+}
+
+/// One-shot or looping effect sprite (EffectList anim).
+#[derive(Component)]
+pub struct FxAnim {
+    pub frames: u32,
+    pub frame: u32,
+    pub t: f32,
+    pub once: bool,
+    pub done: bool,
+    pub follow: Option<Entity>,
+    pub life: f32, // >0 = despawn after; 0 = when once done
+    pub z: f32,
+}
+
+pub fn spawn_fx(cmd: &mut Commands, fx: &FxSheets, name: &str, pos: Vec2, z: f32, once: bool, life: f32, follow: Option<Entity>) -> Option<Entity> {
+    let info = fx.info.get(name)?;
+    let img = fx.images.get(name)?.clone();
+    let layout = fx.layouts.get(name)?.clone();
+    let (w, h) = (info.cell.0 as f32, info.cell.1 as f32);
+    let mut s = Sprite::from_atlas_image(img, TextureAtlas { layout, index: 0 });
+    s.custom_size = Some(Vec2::new(w, h));
+    // anchor is feet-ish inside cell; center the sprite roughly
+    let e = cmd.spawn((
+        s,
+        Transform::from_translation(pos.extend(z)),
+        FxAnim { frames: info.frames.max(1), frame: 0, t: 0.0, once, done: false, follow, life, z },
+        crate::ui::Scr,
+    )).id();
+    Some(e)
+}
+
+pub fn animate_fx(
+    time: Res<Time>,
+    mut cmd: Commands,
+    mut q: Query<(Entity, &mut FxAnim, &mut Sprite, &mut Transform)>,
+    follows: Query<&Transform, Without<FxAnim>>,
+) {
+    let dt = time.delta_secs();
+    for (e, mut a, mut s, mut t) in q.iter_mut() {
+        if let Some(u) = a.follow {
+            if let Ok(ut) = follows.get(u) {
+                t.translation.x = ut.translation.x;
+                t.translation.y = ut.translation.y + 40.0;
+                t.translation.z = a.z;
+            } else {
+                cmd.entity(e).despawn();
+                continue;
+            }
+        }
+        a.t += dt * FPS;
+        while a.t >= 1.0 {
+            a.t -= 1.0;
+            if a.frame + 1 >= a.frames {
+                if a.once { a.done = true; a.frame = a.frames.saturating_sub(1); }
+                else { a.frame = 0; }
+            } else { a.frame += 1; }
+        }
+        if let Some(at) = &mut s.texture_atlas { at.index = a.frame.min(a.frames - 1) as usize; }
+        if a.life > 0.0 {
+            a.life -= dt;
+            if a.life <= 0.0 { cmd.entity(e).despawn(); continue; }
+        } else if a.once && a.done {
+            cmd.entity(e).despawn();
         }
     }
 }

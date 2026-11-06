@@ -131,7 +131,7 @@ pub fn generic_actions(mut clicked: ResMut<Clicked>, mut next: ResMut<NextState<
         Act::Goto(s) => { next.set(*s); false }
         Act::Quit => { exit.write(AppExit::Success); false }
         Act::ToggleSound => { save.sound = !save.sound; save.write(); toast.0 = Some((if save.sound { "Sound ON" } else { "Sound OFF" }.into(), 1.5)); false }
-        Act::Stub(n) => { toast.0 = Some((format!("{n}: not in this prototype"), 2.0)); false }
+        Act::Stub(n) => { toast.0 = Some((format!("{n}"), 2.5)); false }
         Act::Custom(..) => true,
     });
 }

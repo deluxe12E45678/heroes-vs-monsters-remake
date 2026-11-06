@@ -29,7 +29,7 @@ fn key(c: char) -> Option<KeyCode> {
 
 fn drive(mut cmd: Commands, mut st: ResMut<Auto>, time: Res<Time<Real>>, mut cur: ResMut<crate::ui::Cursor>,
          mut mouse: ResMut<ButtonInput<MouseButton>>, mut keys: ResMut<ButtonInput<KeyCode>>, mut exit: MessageWriter<AppExit>,
-         mut held: Local<Option<Vec2>>, aim: Option<Res<crate::battle::AutoAim>>, mut next: ResMut<NextState<crate::AppState>>, mut save: ResMut<crate::save::Save>, mut setup: ResMut<crate::battle::BattleSetup>) {
+         mut held: Local<Option<Vec2>>, aim: Option<Res<crate::battle::AutoAim>>, mut next: ResMut<NextState<crate::AppState>>, mut save: ResMut<crate::save::Save>, mut setup: ResMut<crate::battle::BattleSetup>, mut run: Option<ResMut<crate::battle::Run>>) {
     let ally_pos = aim.as_ref().and_then(|a| a.1);
     let mut aim_pos = aim.and_then(|a| a.0);
     if let Some(p) = *held { cur.world = Some(p); }
@@ -50,7 +50,11 @@ fn drive(mut cmd: Commands, mut st: ResMut<Auto>, time: Res<Time<Real>>, mut cur
         // Bmap,level: start a battle on that map (test only, needs a throwaway HVSM_SAVE); V: start Survival
         "B" | "V" => if std::env::var("HVSM_SAVE").is_ok() {
             let v: Vec<i32> = arg.split(',').filter_map(|x| x.parse().ok()).collect();
-            *setup = crate::battle::BattleSetup { map: v.first().copied().unwrap_or(0) as u32, level: (v.get(1).copied().unwrap_or(1), v.get(1).copied().unwrap_or(1)), survival: op == "V", ..Default::default() };
+            let map = v.first().copied().unwrap_or(0) as u32;
+            let lvl = v.get(1).copied().unwrap_or(1);
+            let node = v.get(2).copied().map(|n| n as u32).unwrap_or(1); // default area-1 for FallDown tests
+            let boss = v.get(3).copied().unwrap_or(0) != 0;
+            *setup = crate::battle::BattleSetup { map, level: (lvl, lvl), survival: op == "V", node, boss, ..Default::default() };
             if op == "V" { setup.level = (0, 0); }
             next.set(crate::AppState::Battle); st.wait = 2.0;
         },
@@ -90,6 +94,10 @@ fn drive(mut cmd: Commands, mut st: ResMut<Auto>, time: Res<Time<Real>>, mut cur
             cmd.spawn(Screenshot::primary_window()).observe(save_to_disk(path));
             st.wait = 0.5;
         }
+        "Z" => if std::env::var("HVSM_SAVE").is_ok() {
+            if let Some(ref mut run) = run { run.won = true; run.done = false; }
+            st.wait = 2.0;
+        },
         "q" => { exit.write(AppExit::Success); }
         // gStore / gHire ... jump straight to a screen; $N gives N gold (only with a throwaway HVSM_SAVE)
         "g" => { use crate::AppState::*; let s = match arg { "Store" => Store, "Hire" => Hire, "Equip" => Equip, "Skills" => Skills, "Tavern" => Tavern, "WorldMap" => WorldMap, "Arena" => Arena, "Options" => Options, "Siege" => Siege, "Summon" => Summon, "Slots" => Slots, "Intro" => Intro, _ => Menu }; next.set(s); st.wait = 1.5; }

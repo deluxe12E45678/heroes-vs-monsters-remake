@@ -46,10 +46,17 @@ pub struct MapNode {
     pub index: u32, pub x: f32, pub y: f32, pub unlock_level: i32, pub icon: String,
     pub boss_level: i32, pub boss_map: u32, pub min_level: i32, pub max_level: i32, pub maps: Vec<u32>,
     #[serde(default)] pub radius: f32, #[serde(default)] pub boss_radius: f32, #[serde(default)] pub begin_dis: f32, #[serde(default)] pub per_pixel: f32,
-    /// WorldMoveMap.xml <FallDown type="normalEquipIndex"> — items shown under Usually Drops on the encounter parchment.
+    /// WorldMoveMap.xml <FallDown type="normalEquipIndex"> — pool + Usually Drops icons on the parchment.
     #[serde(default)] pub normal_drops: Vec<i32>,
-    /// WorldMoveMap.xml <FallDown type="bossEquipIndex">.
+    /// <FallDown type="normalEquipLevel"> — upgrade level rolled per drop (parallel to index picks).
+    #[serde(default)] pub normal_drop_levels: Vec<i32>,
+    /// <FallDown type="normalEquipNumber"> — possible drop counts; AddGameOverScene picks one uniformly (e.g. 0 0 1 1 2 → P(drop)≈60%, E≈0.8).
+    #[serde(default)] pub normal_drop_numbers: Vec<i32>,
+    /// <FallDown type="bossEquipIndex">.
     #[serde(default)] pub boss_drops: Vec<i32>,
+    #[serde(default)] pub boss_drop_levels: Vec<i32>,
+    /// Boss counts are typically 1 1 1 1 1 2 → always ≥1, E≈1.17.
+    #[serde(default)] pub boss_drop_numbers: Vec<i32>,
 }
 /// Offline arena: the PVP_DummyList.xml opponents.
 #[derive(Debug, Clone, Deserialize)]

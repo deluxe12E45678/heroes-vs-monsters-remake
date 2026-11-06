@@ -9,7 +9,7 @@ use bevy::prelude::*;
 pub fn plugin(app: &mut App) {
     app.init_resource::<Run>().init_resource::<NewHeroNotice>()
         .add_systems(OnEnter(AppState::Battle), enter)
-        .init_resource::<AutoAim>().add_systems(Update, (input, director, tutorial, ai, projectiles, effects, order_marks, hud, end_check, outro, outro_hide).chain().run_if(in_state(AppState::Battle)))
+        .init_resource::<AutoAim>().add_systems(Update, (input, director, tutorial, ai, projectiles, skill_bolts, fx_delays, effects, order_marks, hud, end_check, outro, outro_hide).chain().run_if(in_state(AppState::Battle)))
         .add_systems(OnExit(AppState::Battle), (despawn_screen, unpause));
 }
 
@@ -71,6 +71,57 @@ struct Ring(Entity);
 struct HpFill { unit: Entity, w: f32 }
 #[derive(Component)]
 struct Projectile { from: Entity, to: Entity, speed: f32, heal: bool, dmg: f32, delay: f32 }
+
+/// Spawn EffectList visuals for a cast (SkillList.xml <effect> rows).
+/// move_type 2 → projectile toward target; else one-shot / looping at caster or target.
+/// pos: 0/1 ≈ caster, 4 ≈ area/target point, 5 ≈ locked target (common projectile).
+fn spawn_skill_fx(cmd: &mut Commands, fx: &FxSheets, skill: &Skill, caster: Entity, caster_pos: Vec2, target_pos: Option<Vec2>, target: Option<Entity>) {
+    for (i, v) in skill.effects.iter().enumerate() {
+        let name = v.name.trim();
+        if name.is_empty() || !fx.info.contains_key(name) { continue; }
+        let delay = (v.delta.max(0) as f32 / 1000.0) * i as f32; // stagger multi-number via multiple rows usually
+        let life = if v.time_ms.unwrap_or(-1) > 0 { v.time_ms.unwrap() as f32 / 1000.0 } else { 0.0 };
+        let once = life <= 0.0;
+        let at_target = v.pos >= 4 || v.move_type == 2;
+        let pos = if at_target { target_pos.unwrap_or(caster_pos) } else { caster_pos + Vec2::Y * 40.0 };
+        let follow = if v.move_type == 1 {
+            if at_target { target } else { Some(caster) }
+        } else { None };
+        let n = v.number.max(1) as usize;
+        for k in 0..n {
+            let jitter = if v.pos == 4 { Vec2::new(fastrand::f32() * 80.0 - 40.0, fastrand::f32() * 40.0 - 20.0) } else { Vec2::ZERO };
+            let p = pos + jitter + Vec2::X * (k as f32 * 8.0);
+            let start_delay = delay + (v.delta.max(0) as f32 / 1000.0) * k as f32;
+            // use life field: negative life = wait then play (reuse Floating pattern via life offset)
+            let play_life = if start_delay > 0.0 { -(start_delay) } else if life > 0.0 { life } else { 0.0 };
+            // For projectiles: spawn at caster, animate_fx won't move them — use SkillBolt
+            if v.move_type == 2 {
+                if let Some(e) = spawn_fx(cmd, fx, name, caster_pos + Vec2::Y * 50.0, 55.0, true, 0.0, None) {
+                    let dest = target_pos.unwrap_or(caster_pos + Vec2::X * 200.0);
+                    cmd.entity(e).insert(SkillBolt { to: dest, speed: 520.0, delay: start_delay });
+                }
+            } else if let Some(e) = spawn_fx(cmd, fx, name, p, 55.0, once, if life > 0.0 { life } else { 0.0 }, follow) {
+                if start_delay > 0.0 {
+                    cmd.entity(e).insert(Visibility::Hidden);
+                    cmd.entity(e).insert(FxDelay(start_delay));
+                }
+                let _ = e;
+            }
+            // action sound on first
+            let _ = play_life;
+        }
+        // action_sound handled by existing sfx path when non-empty
+        if !v.action_sound.is_empty() {
+            // played via begin_sound primarily; action_sound often sfx_explored on impact — skip here
+        }
+    }
+}
+
+#[derive(Component)]
+struct SkillBolt { to: Vec2, speed: f32, delay: f32 }
+#[derive(Component)]
+struct FxDelay(f32);
+
 #[derive(Component)]
 struct Floating(f32);
 #[derive(Component)]
@@ -585,7 +636,7 @@ fn play(anims: &mut Query<&mut Anim>, c: Option<Entity>, r: Row, once: bool, fli
 
 
 #[allow(clippy::too_many_arguments)]
-fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<Run>, a: Res<AssetServer>, f: Res<Fonts>, sheets: Res<Sheets>,
+fn ai(mut cmd: Commands, fx: Res<FxSheets>, time: Res<Time>, data: Res<GameData>, mut run: ResMut<Run>, a: Res<AssetServer>, f: Res<Fonts>, sheets: Res<Sheets>,
       mut q: Query<(Entity, &mut Unit, &mut Transform, &Children)>, mut anims: Query<&mut Anim>, mut sfx: ResMut<crate::audio::Sfx>) {
     if run.outro.is_some() { return; }
     let dt = time.delta_secs();
@@ -761,6 +812,7 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
             let lbl = cmd.spawn((Text2d::new(s.name.clone()), TextFont { font: f.main.clone().into(), font_size: bevy::text::FontSize::Px(20.0), ..default() },
                 TextColor(Color::srgb(1.0, 0.85, 0.2)), Transform::from_translation((pos + Vec2::Y * 150.0).extend(65.0)), Scr, Floating(1.2))).id();
             let _ = lbl;
+            spawn_skill_fx(&mut cmd, &fx, &s, e, pos, u.target.and_then(alive), u.target);
         }
         // AIManager::OnUpdate: an enemy (or, with auto-battle on, a hero) standing outside the screen's x bounds is sent to
         // a random x inside them (GORoleCB::SetTarget), keeping its y
@@ -880,7 +932,7 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
         cmd.spawn((Sprite::from_color(Color::srgb(1.0, 0.9, 0.4), Vec2::new(14.0, 5.0)), Transform::from_translation((p + Vec2::Y * 60.0).extend(40.0)), Scr,
             Visibility::Hidden, Projectile { from, to, speed: 600.0, heal: false, dmg: amt, delay }));
     }
-    for (te, src, amt, heal) in damage { apply(&mut cmd, &f, &mut q, &mut rng, te, src, amt, heal, &mut anims); }
+    for (te, src, amt, heal) in damage { apply(&mut cmd, &f, &fx, &mut q, &mut rng, te, src, amt, heal, &mut anims); }
     for (te, kind, v, t) in states {
         let Ok((_, mut u, tr, _)) = q.get_mut(te) else { continue };
         if u.dead { continue; }
@@ -927,7 +979,7 @@ fn ai(mut cmd: Commands, time: Res<Time>, data: Res<GameData>, mut run: ResMut<R
 }
 
 #[allow(clippy::too_many_arguments)]
-fn apply(cmd: &mut Commands, f: &Fonts, q: &mut Query<(Entity, &mut Unit, &mut Transform, &Children)>, rng: &mut fastrand::Rng, te: Entity, src: Entity, amt: f32, heal: bool, anims: &mut Query<&mut Anim>) {
+fn apply(cmd: &mut Commands, f: &Fonts, fx: &FxSheets, q: &mut Query<(Entity, &mut Unit, &mut Transform, &Children)>, rng: &mut fastrand::Rng, te: Entity, src: Entity, amt: f32, heal: bool, anims: &mut Query<&mut Anim>) {
     let atk = q.get(src).ok().map(|(_, u, _, _)| (u.f, u.buff.1 + u.st.atk.0.round() as i32));
     let Ok((_, mut u, t, ch)) = q.get_mut(te) else { return };
     if u.dead { return; }
@@ -959,6 +1011,8 @@ fn apply(cmd: &mut Commands, f: &Fonts, q: &mut Query<(Entity, &mut Unit, &mut T
         (format!("{:.0}", m), if u.side == Side::Hero { Color::srgb(1.0, 0.35, 0.3) } else { Color::WHITE })
     };
     spawn_float(cmd, f, pos, txt, col);
+    let hit = if heal { "heal" } else { "hit_normal_0" };
+    let _ = spawn_fx(cmd, fx, hit, pos + Vec2::Y * 50.0, 58.0, true, 0.0, None);
 }
 
 fn spawn_float(cmd: &mut Commands, f: &Fonts, pos: Vec2, s: String, c: Color) {
@@ -966,7 +1020,7 @@ fn spawn_float(cmd: &mut Commands, f: &Fonts, pos: Vec2, s: String, c: Color) {
         Transform::from_translation((pos + Vec2::new(0.0, 110.0)).extend(66.0)), Scr, Floating(0.9)));
 }
 
-fn projectiles(mut cmd: Commands, time: Res<Time>, f: Res<Fonts>, mut run: ResMut<Run>, mut p: Query<(Entity, &mut Projectile, &mut Transform), Without<Unit>>,
+fn projectiles(mut cmd: Commands, time: Res<Time>, f: Res<Fonts>, fx: Res<FxSheets>, mut run: ResMut<Run>, mut p: Query<(Entity, &mut Projectile, &mut Transform), Without<Unit>>,
                mut q: Query<(Entity, &mut Unit, &mut Transform, &Children)>, mut anims: Query<&mut Anim>) {
     let mut rng = run.rng.take().unwrap_or_default();
     let dt = time.delta_secs();
@@ -980,19 +1034,47 @@ fn projectiles(mut cmd: Commands, time: Res<Time>, f: Res<Fonts>, mut run: ResMu
         t.rotation = Quat::from_rotation_z(d.y.atan2(d.x));
         if d.length() <= step {
             cmd.entity(e).despawn();
-            apply(&mut cmd, &f, &mut q, &mut rng, pr.to, pr.from, pr.dmg, pr.heal, &mut anims);
+            apply(&mut cmd, &f, &fx, &mut q, &mut rng, pr.to, pr.from, pr.dmg, pr.heal, &mut anims);
             if pr.dmg >= 0.0 && std::env::var("HVSM_SKILLS").is_ok() { eprintln!("SKILLTEST skill arrow hit dmg={:.1}", pr.dmg); }
             // Flaming Arrows: each arrow also deals its fire damage to the shooter's foes in a box around the hit
             let fa = q.get(pr.from).ok().filter(|x| x.1.st.fire_arrow.3 > 0.0).map(|x| (x.1.st.fire_arrow, x.1.side));
             if let (Some(((dmg, w, h, _), side)), false) = (fa, pr.heal) {
                 let c = goal - Vec2::Y * 50.0;
                 let hit: Vec<Entity> = q.iter().filter(|x| x.1.side != side && !x.1.dead && (x.2.translation.truncate() - c).abs().cmple(Vec2::new(w, h) / 2.0).all()).map(|x| x.0).collect();
-                for o in hit { apply(&mut cmd, &f, &mut q, &mut rng, o, pr.from, dmg.max(1.0), false, &mut anims); }
+                for o in hit { apply(&mut cmd, &f, &fx, &mut q, &mut rng, o, pr.from, dmg.max(1.0), false, &mut anims); }
             }
         }
         else { t.translation += (d.normalize() * step).extend(0.0); }
     }
     run.rng = Some(rng);
+}
+
+
+fn skill_bolts(time: Res<Time>, mut cmd: Commands, mut q: Query<(Entity, &mut SkillBolt, &mut Transform, &mut Visibility)>) {
+    let dt = time.delta_secs();
+    for (e, mut b, mut t, mut v) in q.iter_mut() {
+        if b.delay > 0.0 { b.delay -= dt; continue; }
+        *v = Visibility::Inherited;
+        let pos = t.translation.truncate();
+        let d = b.to - pos;
+        let dist = d.length();
+        let step = b.speed * dt;
+        if dist <= step || dist < 1.0 {
+            cmd.entity(e).despawn();
+        } else {
+            t.translation += (d / dist * step).extend(0.0);
+        }
+    }
+}
+fn fx_delays(time: Res<Time>, mut cmd: Commands, mut q: Query<(Entity, &mut FxDelay, &mut Visibility)>) {
+    let dt = time.delta_secs();
+    for (e, mut d, mut v) in q.iter_mut() {
+        d.0 -= dt;
+        if d.0 <= 0.0 {
+            *v = Visibility::Inherited;
+            cmd.entity(e).remove::<FxDelay>();
+        }
+    }
 }
 
 fn effects(mut cmd: Commands, time: Res<Time>, mut fl: Query<(Entity, &mut Floating, &mut Transform)>, units: Query<(Entity, &Unit)>,
@@ -1094,6 +1176,26 @@ fn hud(run: Res<Run>, setup: Res<BattleSetup>, data: Res<GameData>,
     }
 }
 
+
+/// SceneMainGameMachine::AddGameOverScene FallDown roll:
+/// pick one entry from *EquipNumber uniformly as count; that many times pick from *EquipIndex (and level list unused in our stash).
+fn roll_fall_down(node: &crate::data::MapNode, boss: bool) -> Vec<i32> {
+    let (idxs, nums) = if boss {
+        (&node.boss_drops, &node.boss_drop_numbers)
+    } else {
+        (&node.normal_drops, &node.normal_drop_numbers)
+    };
+    if idxs.is_empty() || nums.is_empty() { return vec![]; }
+    let count = nums[fastrand::usize(..nums.len())];
+    if count <= 0 { return vec![]; }
+    let mut out = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let id = idxs[fastrand::usize(..idxs.len())];
+        if id >= 0 { out.push(id); }
+    }
+    out
+}
+
 fn end_check(mut run: ResMut<Run>, units: Query<&Unit>, ents: Query<(Entity, &Unit)>, mut save: ResMut<Save>, data: Res<GameData>, setup: Res<BattleSetup>, mut next: ResMut<NextState<AppState>>,
              mut out: ResMut<crate::result::Outcome>, time: Res<Time>, mut wait: Local<f32>) {
     let heroes_dead = units.iter().filter(|u| u.side == Side::Hero && u.roster.is_some()).all(|u| u.dead);
@@ -1144,6 +1246,25 @@ fn end_check(mut run: ResMut<Run>, units: Query<&Unit>, ents: Query<(Entity, &Un
     if setup.tutorial && won { // GuideConfig.xml FirstFightReward: money 1000, exp 100, equip 504
         save.tutorial_done = true;
         if let (Some(it), Some(s)) = (data.item(504), save.first_free_stash()) { save.stash[s] = Some(504); loot.push(504); lines.push(format!("Reward: {}", it.name)); }
+    }
+    // WorldMoveMap FallDown → bag (original AddGameOverScene). Tutorial has its fixed reward; arena/siege/survival use their own tables.
+    if won && !setup.tutorial && setup.arena.is_none() && setup.siege.is_none() && !setup.survival {
+        if let Some(node) = data.world.nodes.get(setup.node as usize) {
+            for id in roll_fall_down(node, setup.boss) {
+                if data.item(id).is_none() { continue; }
+                if let Some(s) = save.first_free_stash() {
+                    save.stash[s] = Some(id);
+                    loot.push(id);
+                } else {
+                    lines.push("Stash full — loot lost".into());
+                    break;
+                }
+            }
+            if !loot.is_empty() {
+                let names: Vec<_> = loot.iter().filter_map(|&i| data.item(i).map(|it| it.name.clone())).collect();
+                lines.push(format!("Loot: {}", names.join(", ")));
+            }
+        }
     }
     let mut outro = if setup.survival || setup.arena.is_some() || setup.siege.is_some() { None } else {
         let mut bars = vec![];

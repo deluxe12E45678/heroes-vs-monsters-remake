@@ -1,0 +1,1179 @@
+{
+"BOSS_daoguang": {
+"cell": [
+64,
+23
+],
+"frames": 16,
+"anchor": [
+32.0,
+-9.5
+]
+},
+"HanShuangTuXi": {
+"cell": [
+64,
+64
+],
+"frames": 29,
+"anchor": [
+32.0,
+32.0
+]
+},
+"Tree_dance2": {
+"cell": [
+18,
+43
+],
+"frames": 48,
+"anchor": [
+32.0,
+15.5
+]
+},
+"Tree_dance3": {
+"cell": [
+2,
+2
+],
+"frames": 48,
+"anchor": [
+32.0,
+32.0
+]
+},
+"aerolite": {
+"cell": [
+64,
+64
+],
+"frames": 20,
+"anchor": [
+32.0,
+32.0
+]
+},
+"aerolite_ice": {
+"cell": [
+64,
+64
+],
+"frames": 20,
+"anchor": [
+32.0,
+32.0
+]
+},
+"arrow": {
+"cell": [
+61,
+18
+],
+"frames": 9,
+"anchor": [
+29.0,
+10.0
+]
+},
+"arrow_entangling": {
+"cell": [
+61,
+14
+],
+"frames": 11,
+"anchor": [
+32.0,
+7.0
+]
+},
+"arrow_rain": {
+"cell": [
+53,
+37
+],
+"frames": 20,
+"anchor": [
+22.5,
+32.0
+]
+},
+"break_armor": {
+"cell": [
+64,
+64
+],
+"frames": 15,
+"anchor": [
+32.0,
+32.0
+]
+},
+"charge_line": {
+"cell": [
+64,
+64
+],
+"frames": 6,
+"anchor": [
+32.0,
+32.0
+]
+},
+"courage_halo": {
+"cell": [
+64,
+47
+],
+"frames": 21,
+"anchor": [
+32.0,
+23.5
+]
+},
+"courage_halo2": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"duguo": {
+"cell": [
+64,
+45
+],
+"frames": 48,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fire_cloud": {
+"cell": [
+64,
+64
+],
+"frames": 19,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fire_cloud_cycle": {
+"cell": [
+64,
+64
+],
+"frames": 42,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fire_cloud_cycle2": {
+"cell": [
+64,
+64
+],
+"frames": 42,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fire_explode": {
+"cell": [
+64,
+64
+],
+"frames": 45,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fire_explode2": {
+"cell": [
+64,
+64
+],
+"frames": 45,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fire_sheild": {
+"cell": [
+64,
+45
+],
+"frames": 40,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fireball": {
+"cell": [
+51,
+53
+],
+"frames": 9,
+"anchor": [
+32.0,
+27.0
+]
+},
+"fireball2": {
+"cell": [
+64,
+64
+],
+"frames": 9,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fireballs": {
+"cell": [
+61,
+62
+],
+"frames": 9,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fireballs2": {
+"cell": [
+64,
+64
+],
+"frames": 9,
+"anchor": [
+32.0,
+32.0
+]
+},
+"fireballs_0": {
+"cell": [
+55,
+62
+],
+"frames": 9,
+"anchor": [
+32.0,
+32.0
+]
+},
+"heal_circle": {
+"cell": [
+64,
+64
+],
+"frames": 32,
+"anchor": [
+32.0,
+32.0
+]
+},
+"heal_circle2": {
+"cell": [
+64,
+64
+],
+"frames": 32,
+"anchor": [
+32.0,
+32.0
+]
+},
+"hellpain": {
+"cell": [
+64,
+64
+],
+"frames": 32,
+"anchor": [
+32.0,
+32.0
+]
+},
+"holy_strike": {
+"cell": [
+64,
+51
+],
+"frames": 6,
+"anchor": [
+32.0,
+32.0
+]
+},
+"holyheal": {
+"cell": [
+64,
+64
+],
+"frames": 14,
+"anchor": [
+32.0,
+32.0
+]
+},
+"holyheal2": {
+"cell": [
+64,
+64
+],
+"frames": 14,
+"anchor": [
+32.0,
+32.0
+]
+},
+"huoshiyu": {
+"cell": [
+64,
+64
+],
+"frames": 20,
+"anchor": [
+32.0,
+32.0
+]
+},
+"ice_sheild": {
+"cell": [
+64,
+45
+],
+"frames": 40,
+"anchor": [
+32.0,
+32.0
+]
+},
+"ice_storm": {
+"cell": [
+64,
+64
+],
+"frames": 48,
+"anchor": [
+32.0,
+32.0
+]
+},
+"jianyu": {
+"cell": [
+53,
+37
+],
+"frames": 20,
+"anchor": [
+22.5,
+32.0
+]
+},
+"jianyu2": {
+"cell": [
+53,
+37
+],
+"frames": 20,
+"anchor": [
+22.5,
+32.0
+]
+},
+"jishizhiliao": {
+"cell": [
+64,
+64
+],
+"frames": 23,
+"anchor": [
+32.0,
+32.0
+]
+},
+"kuangbaoTX1": {
+"cell": [
+64,
+64
+],
+"frames": 42,
+"anchor": [
+32.0,
+32.0
+]
+},
+"kuangbaoTX2": {
+"cell": [
+64,
+64
+],
+"frames": 42,
+"anchor": [
+32.0,
+32.0
+]
+},
+"kuangchuiTX": {
+"cell": [
+64,
+64
+],
+"frames": 9,
+"anchor": [
+32.0,
+32.0
+]
+},
+"linghunTX1": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"magic_sheild_remind": {
+"cell": [
+64,
+55
+],
+"frames": 40,
+"anchor": [
+32.0,
+32.0
+]
+},
+"magic_sheild_remind2": {
+"cell": [
+64,
+63
+],
+"frames": 40,
+"anchor": [
+32.0,
+32.0
+]
+},
+"nuqiTX1": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"pain": {
+"cell": [
+64,
+64
+],
+"frames": 32,
+"anchor": [
+32.0,
+32.0
+]
+},
+"poison_strike": {
+"cell": [
+64,
+64
+],
+"frames": 5,
+"anchor": [
+32.0,
+32.0
+]
+},
+"prey": {
+"cell": [
+64,
+64
+],
+"frames": 31,
+"anchor": [
+32.0,
+32.0
+]
+},
+"prey2": {
+"cell": [
+64,
+64
+],
+"frames": 31,
+"anchor": [
+32.0,
+32.0
+]
+},
+"roar_blue": {
+"cell": [
+64,
+64
+],
+"frames": 16,
+"anchor": [
+32.0,
+32.0
+]
+},
+"roar_darkred": {
+"cell": [
+64,
+64
+],
+"frames": 16,
+"anchor": [
+32.0,
+32.0
+]
+},
+"roar_darkred2": {
+"cell": [
+64,
+64
+],
+"frames": 16,
+"anchor": [
+32.0,
+32.0
+]
+},
+"roar_red": {
+"cell": [
+64,
+64
+],
+"frames": 17,
+"anchor": [
+32.0,
+32.0
+]
+},
+"roar_wave": {
+"cell": [
+64,
+64
+],
+"frames": 17,
+"anchor": [
+32.0,
+32.0
+]
+},
+"scope": {
+"cell": [
+64,
+40
+],
+"frames": 9,
+"anchor": [
+32.0,
+22.0
+]
+},
+"shandianqiu": {
+"cell": [
+59,
+51
+],
+"frames": 4,
+"anchor": [
+30.0,
+25.0
+]
+},
+"shandianqiulianshe": {
+"cell": [
+64,
+64
+],
+"frames": 8,
+"anchor": [
+32.0,
+32.0
+]
+},
+"sheild_remind": {
+"cell": [
+64,
+42
+],
+"frames": 40,
+"anchor": [
+32.0,
+32.0
+]
+},
+"sheild_remind2": {
+"cell": [
+64,
+49
+],
+"frames": 40,
+"anchor": [
+32.0,
+32.0
+]
+},
+"shengdunfangyu": {
+"cell": [
+64,
+45
+],
+"frames": 40,
+"anchor": [
+32.0,
+32.0
+]
+},
+"shengguangbaozha": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"shengguangkuangbao": {
+"cell": [
+64,
+64
+],
+"frames": 23,
+"anchor": [
+32.0,
+32.0
+]
+},
+"shengguangshu_0": {
+"cell": [
+64,
+60
+],
+"frames": 42,
+"anchor": [
+32.0,
+32.0
+]
+},
+"shengguangxuneng": {
+"cell": [
+64,
+64
+],
+"frames": 15,
+"anchor": [
+32.0,
+32.0
+]
+},
+"shuimian": {
+"cell": [
+28,
+31
+],
+"frames": 35,
+"anchor": [
+10.0,
+32.0
+]
+},
+"sing_barbarian": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"sing_confuse": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"sing_fourheroes": {
+"cell": [
+64,
+64
+],
+"frames": 42,
+"anchor": [
+32.0,
+32.0
+]
+},
+"sing_ironskin": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"sing_note": {
+"cell": [
+64,
+45
+],
+"frames": 13,
+"anchor": [
+32.0,
+27.5
+]
+},
+"sing_recover": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"skeleton_huo_0": {
+"cell": [
+64,
+53
+],
+"frames": 5,
+"anchor": [
+32.0,
+32.0
+]
+},
+"skeleton_rotation2": {
+"cell": [
+64,
+64
+],
+"frames": 48,
+"anchor": [
+32.0,
+32.0
+]
+},
+"solo_fire": {
+"cell": [
+64,
+64
+],
+"frames": 15,
+"anchor": [
+32.0,
+32.0
+]
+},
+"solo_fire2": {
+"cell": [
+64,
+64
+],
+"frames": 15,
+"anchor": [
+32.0,
+32.0
+]
+},
+"solo_ice": {
+"cell": [
+64,
+64
+],
+"frames": 15,
+"anchor": [
+32.0,
+32.0
+]
+},
+"state_cleave": {
+"cell": [
+64,
+50
+],
+"frames": 27,
+"anchor": [
+32.0,
+32.0
+]
+},
+"state_magic": {
+"cell": [
+64,
+42
+],
+"frames": 29,
+"anchor": [
+32.0,
+32.0
+]
+},
+"state_magic2": {
+"cell": [
+64,
+46
+],
+"frames": 29,
+"anchor": [
+32.0,
+32.0
+]
+},
+"state_rage": {
+"cell": [
+64,
+64
+],
+"frames": 31,
+"anchor": [
+32.0,
+32.0
+]
+},
+"state_rage2": {
+"cell": [
+64,
+64
+],
+"frames": 31,
+"anchor": [
+32.0,
+32.0
+]
+},
+"stomp": {
+"cell": [
+64,
+64
+],
+"frames": 10,
+"anchor": [
+32.0,
+32.0
+]
+},
+"storm": {
+"cell": [
+64,
+60
+],
+"frames": 6,
+"anchor": [
+32.0,
+32.0
+]
+},
+"storm2": {
+"cell": [
+64,
+64
+],
+"frames": 6,
+"anchor": [
+32.0,
+32.0
+]
+},
+"tripping_hit": {
+"cell": [
+64,
+44
+],
+"frames": 10,
+"anchor": [
+32.0,
+16.0
+]
+},
+"turn": {
+"cell": [
+64,
+64
+],
+"frames": 31,
+"anchor": [
+32.0,
+32.0
+]
+},
+"wind_around": {
+"cell": [
+64,
+53
+],
+"frames": 16,
+"anchor": [
+32.0,
+32.0
+]
+},
+"xueqioubaozha": {
+"cell": [
+64,
+64
+],
+"frames": 26,
+"anchor": [
+32.0,
+32.0
+]
+},
+"zhendangmihunbo": {
+"cell": [
+64,
+64
+],
+"frames": 17,
+"anchor": [
+32.0,
+32.0
+]
+},
+"hit_arrow": {
+"cell": [
+64,
+64
+],
+"frames": 10,
+"anchor": [
+32.0,
+32.0
+]
+},
+"hit_block": {
+"cell": [
+28,
+64
+],
+"frames": 5,
+"anchor": [
+-4.5,
+32.0
+]
+},
+"hit_fire": {
+"cell": [
+64,
+64
+],
+"frames": 18,
+"anchor": [
+32.0,
+32.0
+]
+},
+"hit_ice": {
+"cell": [
+64,
+64
+],
+"frames": 18,
+"anchor": [
+32.0,
+32.0
+]
+},
+"hit_magic": {
+"cell": [
+64,
+64
+],
+"frames": 18,
+"anchor": [
+32.0,
+32.0
+]
+},
+"hit_normal_0": {
+"cell": [
+54,
+56
+],
+"frames": 5,
+"anchor": [
+29.5,
+32.0
+]
+},
+"hit_normal_1": {
+"cell": [
+64,
+42
+],
+"frames": 4,
+"anchor": [
+32.0,
+22.5
+]
+},
+"skill_start": {
+"cell": [
+64,
+64
+],
+"frames": 30,
+"anchor": [
+32.0,
+32.0
+]
+},
+"levelup": {
+"cell": [
+64,
+52
+],
+"frames": 31,
+"anchor": [
+32.0,
+32.0
+]
+},
+"resist": {
+"cell": [
+64,
+64
+],
+"frames": 13,
+"anchor": [
+32.0,
+32.0
+]
+},
+"revive": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"cure": {
+"cell": [
+64,
+64
+],
+"frames": 14,
+"anchor": [
+32.0,
+32.0
+]
+},
+"heal": {
+"cell": [
+36,
+45
+],
+"frames": 40,
+"anchor": [
+16.5,
+32.0
+]
+},
+"state_dizzy": {
+"cell": [
+64,
+46
+],
+"frames": 31,
+"anchor": [
+32.0,
+32.0
+]
+},
+"state_frozen": {
+"cell": [
+62,
+34
+],
+"frames": 1,
+"anchor": [
+31.0,
+13.0
+]
+},
+"state_onfire": {
+"cell": [
+64,
+64
+],
+"frames": 21,
+"anchor": [
+32.0,
+32.0
+]
+},
+"state_poison": {
+"cell": [
+54,
+43
+],
+"frames": 37,
+"anchor": [
+26.5,
+32.0
+]
+},
+"state_taunted": {
+"cell": [
+55,
+31
+],
+"frames": 20,
+"anchor": [
+25.0,
+29.5
+]
+},
+"state_blunt": {
+"cell": [
+64,
+64
+],
+"frames": 33,
+"anchor": [
+32.0,
+32.0
+]
+}
+}
