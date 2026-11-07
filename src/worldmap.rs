@@ -77,7 +77,17 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     // v0.1.13: after every battle, one camp + one mission marker respawn around where the party now stands
     if std::mem::take(&mut roam.fought) { roam.marks.clear(); }
+    roam.grace = GRACE; roam.walked = 0.0; roam.walk_check = 0;
     refill_marks(&data, &save, &mut roam);
+    // self-test hook (throwaway HVSM_SAVE only): HVSM_TESTPANEL=boss|normal,<node> opens that encounter panel
+    if let (Ok(v), Ok(_)) = (std::env::var("HVSM_TESTPANEL"), std::env::var("HVSM_SAVE")) {
+        let mut it = v.split(',');
+        let boss = it.next() == Some("boss");
+        let ni = it.next().and_then(|x| x.parse::<usize>().ok()).unwrap_or(1).min(data.world.nodes.len() - 1);
+        let n = &data.world.nodes[ni];
+        let banner = if boss { format!("Boss_Encountered_{}", ni.clamp(1, 13)) } else { "Monsters_encountered".to_string() };
+        offer_battle(&mut roam, BattleSetup { node: n.index, map: if boss { n.boss_map } else { n.maps.first().copied().unwrap_or(0) }, level: (n.min_level, n.max_level), boss, ..default() }, None, &banner, &mut cmd, &a, &f, &data);
+    }
     if save.last_scene != 1 || save.map_pos != Some((start.x, start.y)) { save.last_scene = 1; save.map_pos = Some((start.x, start.y)); save.write(); }
     for (p, kind, _) in &roam.marks {
         // UserMoveMapTaskNode::initNode: just the looping CompAnimObj (WorldMoveMap.xml animation = Renwu_mark skull for <Task>,
@@ -132,7 +142,9 @@ pub struct Roam { pub pos: Option<Vec2>, walked: f32, /// last whole-pixel exces
     /// SceneMoveMap fight_retreat prompt: the battle on offer and the marker to put back on RETREAT
     prompt: Option<(BattleSetup, Option<(Vec2, MarkKind, u32)>)>,
     /// v0.1.13: set when a battle starts; the next map enter respawns the camp/mission markers near the party
-    pub fought: bool }
+    pub fought: bool,
+    /// v0.1.14 (own addition): map px of walking after a battle / retreat / load before random encounters roll again
+    pub grace: f32, trip: f32 }
 #[derive(Component)]
 struct PromptEl;
 #[derive(Clone, Copy, PartialEq)]
@@ -165,6 +177,9 @@ fn area_at<'a>(data: &'a GameData, px: Vec2) -> Option<&'a crate::data::MapNode>
 }
 
 /// Refill mission (<Task>, tent) and hero-camp (<RefreshHero>) markers: random points inside unlocked areas near the party.
+/// map px of encounter-free walking after a battle, a retreat or loading the map (own addition, see v0.1.14 notes)
+const GRACE: f32 = 90.0;
+
 fn refill_marks(data: &GameData, save: &Save, roam: &mut Roam) {
     let here = to_px(data, roam.pos.unwrap_or_default());
     for (kind, maps, dist, want) in [(MarkKind::Task, &data.world.task_maps, data.world.task_dist, 1), (MarkKind::Hero, &data.world.hero_maps, data.world.hero_dist, 1)] {
@@ -176,7 +191,7 @@ fn refill_marks(data: &GameData, save: &Save, roam: &mut Roam) {
             let ang = fastrand::f32() * std::f32::consts::TAU;
             let c = here + Vec2::new(ang.cos(), ang.sin()) * (25.0 + fastrand::f32() * dist);
             let Some(n) = area_at(data, c) else { continue };
-            if !open(save, n.index) || c.distance(Vec2::new(n.x, n.y)) < 45.0 { continue; }
+            if !open(save, n.index) || c.distance(Vec2::new(n.x, n.y)) < 45.0 || (c.distance(here) < 45.0 && tries < 150) { continue; }
             // GuideConfig <FirstRefreshHero mapindex=113 level=1>: the first hero camp is map 113 (drops the Archer)
             let first = kind == MarkKind::Hero && save.heroes.iter().all(|o| o.hero != 5);
             roam.marks.push((to_world(data, c.x, c.y), kind, if first { 113 } else { maps[fastrand::usize(..maps.len())] }));
@@ -199,7 +214,7 @@ fn actions(mut cmd: Commands, a: Res<AssetServer>, mut clicked: ResMut<Clicked>,
             for e in prompt_q.iter() { cmd.entity(e).despawn(); }
             let (s, mark) = roam.prompt.take().unwrap();
             if fight { *setup = s; roam.fought = true; next.set(AppState::Battle); }
-            else { roam.walked = 0.0; roam.walk_check = 0; if let Some(m) = mark { roam.marks.push(m); } }
+            else { roam.walked = 0.0; roam.walk_check = 0; roam.grace = GRACE; if let Some(m) = mark { roam.marks.push(m); } }
         }
         return;
     }
@@ -252,6 +267,7 @@ fn actions(mut cmd: Commands, a: Res<AssetServer>, mut clicked: ResMut<Clicked>,
 /// Pre-battle panel: the area's normalShow parchment (Monsters_encountered "Average level:", Hero_Encountered "Enemy Level:",
 /// Boss_Encountered_N "Boss Level:") with button_fight / button_RETREAT (SceneMoveMap::OnLoad creates both buttons).
 fn offer_battle(roam: &mut Roam, setup: BattleSetup, mark: Option<(Vec2, MarkKind, u32)>, banner: &str, cmd: &mut Commands, a: &AssetServer, f: &Fonts, data: &GameData) {
+    if std::env::var("HVSM_ENCLOG").is_ok() { eprintln!("ENCLOG {banner} after {:.0} map px", roam.trip); roam.trip = 0.0; }
     roam.walked = 0.0; roam.walk_check = 0;
     let avg = (setup.level.0 + setup.level.1) as f32 / 2.0;
     let dim = cmd.spawn((Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.5), SCREEN * 1.3), Transform::from_xyz(0.0, 0.0, 82.0), Scr, PromptEl)).id();
@@ -260,9 +276,11 @@ fn offer_battle(roam: &mut Roam, setup: BattleSetup, mark: Option<(Vec2, MarkKin
     let p = image(cmd, a, &format!("ui/{banner}.png"), c, None, 83.0);
     cmd.entity(p).insert(PromptEl);
     // the level goes after the panel's "...Level:" caption (measured on the 358×374 textures)
-    let dx = if banner.starts_with("Hero") { 50.0 } else if banner.starts_with("Boss") { 40.0 } else { 48.0 };
+    let dx = if banner.starts_with("Hero") { 50.0 } else if banner.starts_with("Boss") { 52.0 } else { 48.0 };
     let lv = if avg.fract() == 0.0 { format!("{avg:.0}") } else { format!("{avg:.1}") };
-    let t = text(cmd, f, lv, c + Vec2::new(dx, 126.0), 24.0, Color::srgb(1.0, 0.95, 0.75), 84.0);
+    // boss panel is 358×520: its "Boss Level:" caption sits at texture y≈65 → +195 (the old +126 hit the May Drop line)
+    let ly = if banner.starts_with("Boss") { 195.0 } else { 126.0 };
+    let t = text(cmd, f, lv, c + Vec2::new(dx, ly), 24.0, Color::srgb(1.0, 0.95, 0.75), 84.0);
     cmd.entity(t).insert((PromptEl, bevy::sprite::Anchor::CENTER_LEFT));
     // Usually Drops: parchment bakes in "Usually Drops: ???" + a ? box; overlay real icons from
     // WorldMoveMap.xml <FallDown>. Hide icons when *EquipNumber is all zeros (nodes 9–15 normals
@@ -270,6 +288,8 @@ fn offer_battle(roam: &mut Roam, setup: BattleSetup, mark: Option<(Vec2, MarkKin
     // area doesn't show the same first-five Waraxe/Warhammer row.
     let node = data.world.nodes.get(setup.node as usize);
     let drops: Vec<i32> = node.map(|n| {
+        // the hero-camp panel's slot is the recruit silhouette, not loot
+        if banner.starts_with("Hero") { return vec![]; }
         let boss = setup.boss || banner.starts_with("Boss");
         let (src, nums) = if boss { (&n.boss_drops, &n.boss_drop_numbers) } else { (&n.normal_drops, &n.normal_drop_numbers) };
         if nums.is_empty() || nums.iter().all(|&c| c <= 0) { return vec![]; }
@@ -291,18 +311,34 @@ fn offer_battle(roam: &mut Roam, setup: BattleSetup, mark: Option<(Vec2, MarkKin
         }
     }
     if !shown.is_empty() {
+        // v0.1.14: lay the icons out inside the panel's own Usually Drops slot (texture pixels, y down), measured on the
+        // textures: Monsters/Hero 358×374 — "???" + ? box at x 210–295, y 150–188, free parchment row under the caption
+        // y 195–245; Boss 358×520 — "???" + box at x 228–318, y 97–136, between "Usually Drops:" and "May Drop:".
+        // The old code put every panel's row at the same offset, which landed on the boss panel's May Drop list.
+        let boss_panel = banner.starts_with("Boss");
+        let (tw, th) = if boss_panel { (358.0, 520.0) } else { (358.0, 374.0) };
+        let (cover, row) = if boss_panel { ((226.0, 96.0, 320.0, 137.0), (34.0, 96.0, 320.0, 131.0)) }
+                           else { ((208.0, 148.0, 297.0, 190.0), (40.0, 196.0, 318.0, 246.0)) };
+        let to_w = |x: f32, y: f32| c + Vec2::new(x - tw / 2.0, th / 2.0 - y);
+        let parch = Color::srgb(164.0 / 255.0, 110.0 / 255.0, 58.0 / 255.0);
+        let (c0, c1) = (to_w(cover.0, cover.1), to_w(cover.2, cover.3));
+        cmd.spawn((Sprite::from_color(parch, (c1 - c0).abs()), Transform::from_translation(((c0 + c1) / 2.0).extend(84.2)), Scr, PromptEl));
         let n = shown.len() as f32;
-        let base = c + Vec2::new(20.0, 18.0);
-        // cover the parchment's baked-in "???" + ? box so only the real icons show
-        let blot = cmd.spawn((Sprite::from_color(Color::srgb(0.72, 0.55, 0.32), Vec2::new(n * 58.0 + 40.0, 56.0)), Transform::from_translation(base.extend(84.2)), Scr, PromptEl)).id();
-        let _ = blot;
+        let (rw, rh) = (row.2 - row.0, row.3 - row.1);
+        let gap = 6.0;
+        let size = ((rw - gap * (n - 1.0)) / n).min(rh - 2.0).min(48.0);
+        let total = n * size + (n - 1.0) * gap;
+        // boss row sits right of nothing (caption is on the line above): centre it; normal row: centre under the caption
+        let x0 = row.0 + (rw - total) / 2.0 + size / 2.0;
+        let yc = (row.1 + row.3) / 2.0;
         for (i, id) in shown.into_iter().enumerate() {
             if let Some(path) = crate::common::item_icon_path(data, id) {
-                let x = base.x + (i as f32 - (n - 1.0) / 2.0) * 58.0;
+                let p = to_w(x0 + i as f32 * (size + gap), yc);
+                // dark slot frame like the baked ? box, then the icon
+                cmd.spawn((Sprite::from_color(Color::srgba(0.18, 0.15, 0.12, 0.85), Vec2::splat(size + 4.0)), Transform::from_translation(p.extend(84.4)), Scr, PromptEl));
                 let mut sp = Sprite::from_image(a.load(path));
-                sp.custom_size = Some(Vec2::splat(48.0));
-                let e = cmd.spawn((sp, Transform::from_translation(Vec3::new(x, base.y, 84.5)), Scr, PromptEl)).id();
-                let _ = e;
+                sp.custom_size = Some(Vec2::splat(size));
+                cmd.spawn((sp, Transform::from_translation(p.extend(84.5)), Scr, PromptEl));
             }
         }
     }
@@ -368,7 +404,8 @@ fn walk(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, time: Res<Time>, 
         _ => {}
     }
     // mission / hero-camp markers
-    if let Some(k) = roam.marks.iter().position(|m| m.0.distance(np) <= 40.0) {
+    // only stepping *onto* a marker triggers it (a marker put back on RETREAT under the party no longer re-fires at once)
+    if let Some(k) = roam.marks.iter().position(|m| m.0.distance(np) <= 40.0 && m.0.distance(pos) > 40.0) {
         let mark = roam.marks.remove(k);
         let (_, kind, map) = mark;
         let n = area.unwrap_or(&data.world.nodes[1]);
@@ -390,7 +427,9 @@ fn walk(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, time: Res<Time>, 
     // random encounters — UserMoveMapNode::OnUpdate: accumulate walk while inside an unlocked area; once walked >
     // begindis, each further whole pixel raises a d100 check by propperpixel (score = excess·propperpixel; fire when
     // score > lrand48()%100). Failed rolls keep the accumulator so the chance grows until a hit; a hit resets it.
-    if let Some(n) = area.filter(|n| open(&save, n.index)) {
+    if std::env::var("HVSM_ENCLOG").is_ok() { roam.trip += moved; }
+    if roam.grace > 0.0 { roam.grace -= moved; }
+    else if let Some(n) = area.filter(|n| open(&save, n.index)) {
         roam.walked += moved;
         if roam.walked > n.begin_dis {
             let excess = (roam.walked - n.begin_dis).floor() as i32;
