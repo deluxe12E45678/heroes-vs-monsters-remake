@@ -67,7 +67,10 @@ pub fn attr_value(a: &SkillAttr, level: i32) -> f32 {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Extra { pub avoid_pct: i32, pub resist_fire: i32, pub resist_cold: i32, pub resist_flat: i32 }
+pub struct Extra { pub avoid_pct: i32, pub resist_fire: i32, pub resist_cold: i32, pub resist_flat: i32,
+    /// v0.1.13 dual wield: off-hand weapon dice (slot 2) when both hands hold a weapon and the rig has the
+    /// double_attack_b swing; every second swing uses it. off_mult = 50% base + Dual-Wield Specialization (Addoffhanddamage).
+    pub off_dice: Option<(i32, i32)>, pub off_mult: f32, pub swing: u32 }
 
 pub fn hero_fighter(data: &GameData, oh: &OwnedHero) -> (Fighter, Extra) { hero_fighter_with(data, oh, true, true) }
 
@@ -79,7 +82,7 @@ pub fn hero_fighter_with(data: &GameData, oh: &OwnedHero, use_equip: bool, use_p
     let dice = w.map(|w| (w.min_attack.unwrap_or(0), w.max_attack.unwrap_or(0))).unwrap_or((1, 2));
     let mut f = build_fighter(&h.stats, &h.formulas, oh.level, dice);
     let mut ex = Extra::default();
-    let (mut hp_pct, mut atk_pct) = (0.0f32, 0.0f32);
+    let (mut hp_pct, mut atk_pct, mut off_pct) = (0.0f32, 0.0f32, 0.0f32);
     // --- equipment (AllEquipped attr: prop = chance %, data = value) ---
     for item in oh.equip.iter().flatten().filter(|_| use_equip).filter_map(|i| data.item(*i)) {
         f.ac += item.ac.unwrap_or(0);
@@ -128,8 +131,17 @@ pub fn hero_fighter_with(data: &GameData, oh: &OwnedHero, use_equip: bool, use_p
                 SkillEffect::ResistFire => ex.resist_fire += v as i32,
                 SkillEffect::ResistCold => ex.resist_cold += v as i32,
                 SkillEffect::ResistPhysics => f.resist_physics += v as i32,
+                SkillEffect::Addoffhanddamage => off_pct += if pct { v } else { v / 100.0 },
                 _ => {}
             }
+        }
+    }
+    if use_equip {
+        let wpn = |k: usize| oh.equip[k].and_then(|i| data.item(i)).filter(|w| w.max_attack.unwrap_or(0) > 0);
+        let double = crate::anim::rigs().keys.get(&crate::anim::hero_key(data, oh.hero)).map(|k| k.rows.get(5).map(|r| r == "double_attack_b").unwrap_or(false)).unwrap_or(false);
+        if let (true, Some(_), Some(o)) = (double, wpn(3), wpn(2)) {
+            ex.off_dice = Some((o.min_attack.unwrap_or(0), o.max_attack.unwrap_or(0)));
+            ex.off_mult = 0.5 + off_pct;
         }
     }
     f.max_hp *= 1.0 + hp_pct;

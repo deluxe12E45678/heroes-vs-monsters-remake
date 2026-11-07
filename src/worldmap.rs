@@ -8,8 +8,9 @@ use bevy::prelude::*;
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<Roam>().add_systems(OnEnter(AppState::WorldMap), enter)
+        .add_systems(OnEnter(AppState::Battle), |mut roam: ResMut<Roam>| roam.fought = true)
         .add_systems(Update, (popup_close, actions, walk, camera_pan, fade, mark_anim).chain().run_if(in_state(AppState::WorldMap)))
-        .add_systems(OnExit(AppState::WorldMap), despawn_screen);
+        .add_systems(OnExit(AppState::WorldMap), (despawn_screen, |save: Res<Save>| save.write()));
 }
 
 #[derive(Component)]
@@ -25,7 +26,7 @@ fn node_pos(data: &GameData, i: u32) -> Vec2 {
     Vec2::new((n.x - data.world.width / 2.0) * 2.0, (data.world.height / 2.0 - n.y) * 2.0)
 }
 
-fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameData>, sheets: Res<Sheets>, save: Res<Save>, mut roam: ResMut<Roam>, mut notice: ResMut<crate::battle::NewHeroNotice>) {
+fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameData>, sheets: Res<Sheets>, mut save: ResMut<Save>, mut roam: ResMut<Roam>, mut notice: ResMut<crate::battle::NewHeroNotice>) {
     if std::mem::take(&mut notice.0) { new_hero_popup(&mut cmd, &a, &f); }
     let root = cmd.spawn((Transform::default(), Visibility::default(), Scr, MapRoot)).id();
     let mut s = Sprite::from_image(a.load("ui/worldmap.jpg"));
@@ -64,6 +65,7 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     }
     // hero token: the party leader, walking
     let lead = save.party.first().map(|&r| save.heroes[r].hero).unwrap_or(0);
+    if roam.pos.is_none() { if let Some((x, y)) = save.map_pos { roam.pos = Some(Vec2::new(x, y)); } }
     let start = roam.pos.unwrap_or_else(|| { let (x, y) = data.world.begin; if x > 0.0 { to_world(&data, x, y) } else { node_pos(&data, 0) } });
     roam.pos = Some(start);
     roam.pending = None;
@@ -73,7 +75,10 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
         roam.walked = 0.0; roam.walk_check = 0;
         if let Some(m) = mark { roam.marks.push(m); }
     }
+    // v0.1.13: after every battle, one camp + one mission marker respawn around where the party now stands
+    if std::mem::take(&mut roam.fought) { roam.marks.clear(); }
     refill_marks(&data, &save, &mut roam);
+    if save.last_scene != 1 || save.map_pos != Some((start.x, start.y)) { save.last_scene = 1; save.map_pos = Some((start.x, start.y)); save.write(); }
     for (p, kind, _) in &roam.marks {
         // UserMoveMapTaskNode::initNode: just the looping CompAnimObj (WorldMoveMap.xml animation = Renwu_mark skull for <Task>,
         // Yinxiong_mark tent for <RefreshHero>); no glow or label
@@ -125,7 +130,9 @@ fn to_px(data: &GameData, p: Vec2) -> Vec2 { Vec2::new(p.x / 2.0 + data.world.wi
 pub struct Roam { pub pos: Option<Vec2>, walked: f32, /// last whole-pixel excess used for the d100 check (UserMoveMapNode::OnUpdate)
     walk_check: i32, boss_armed: bool, marks: Vec<(Vec2, MarkKind, u32)>, pending: Option<(f32, BattleSetup, String)>,
     /// SceneMoveMap fight_retreat prompt: the battle on offer and the marker to put back on RETREAT
-    prompt: Option<(BattleSetup, Option<(Vec2, MarkKind, u32)>)> }
+    prompt: Option<(BattleSetup, Option<(Vec2, MarkKind, u32)>)>,
+    /// v0.1.13: set when a battle starts; the next map enter respawns the camp/mission markers near the party
+    pub fought: bool }
 #[derive(Component)]
 struct PromptEl;
 #[derive(Clone, Copy, PartialEq)]
@@ -191,7 +198,7 @@ fn actions(mut cmd: Commands, a: Res<AssetServer>, mut clicked: ResMut<Clicked>,
         if let Some(fight) = choice {
             for e in prompt_q.iter() { cmd.entity(e).despawn(); }
             let (s, mark) = roam.prompt.take().unwrap();
-            if fight { *setup = s; next.set(AppState::Battle); }
+            if fight { *setup = s; roam.fought = true; next.set(AppState::Battle); }
             else { roam.walked = 0.0; roam.walk_check = 0; if let Some(m) = mark { roam.marks.push(m); } }
         }
         return;
@@ -199,7 +206,7 @@ fn actions(mut cmd: Commands, a: Res<AssetServer>, mut clicked: ResMut<Clicked>,
     if k.just_pressed(KeyCode::Escape) { next.set(AppState::Tavern); }
     if let Some((t, s, _)) = &mut roam.pending {
         *t -= time.delta_secs();
-        if *t <= 0.0 { *setup = s.clone(); roam.pending = None; next.set(AppState::Battle); }
+        if *t <= 0.0 { *setup = s.clone(); roam.pending = None; roam.fought = true; next.set(AppState::Battle); }
         clicked.0.clear();
         return;
     }
@@ -344,6 +351,7 @@ fn walk(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, time: Res<Time>, 
     let moved = (np - pos).length() / 2.0; // in map pixels
     t.translation = np.extend(5.0);
     roam.pos = Some(np);
+    save.map_pos = Some((np.x, np.y));
     let area = area_at(&data, px);
     if let Some(n) = area { if save.current_node != n.index { save.current_node = n.index; } }
     // boss camp: reaching the area centre (bossradius) fights its boss

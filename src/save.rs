@@ -52,6 +52,9 @@ pub struct Save {
     #[serde(default)] pub found: Vec<i32>,
     /// best Survival result (GameData::SetInfinityBattleInfos)
     #[serde(default)] pub survival_best: i32,
+    /// v0.1.13 resume: last screen (0 = Inn, 1 = World Map) and the party's map position
+    #[serde(default)] pub last_scene: u8,
+    #[serde(default)] pub map_pos: Option<(f32, f32)>,
 }
 fn yes() -> bool { true }
 fn one() -> u8 { 1 }

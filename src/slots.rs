@@ -62,7 +62,7 @@ fn actions(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<crat
                 match Save::read_slot(i) {
                     Some(s) => {
                         *save = s;
-                        if save.tutorial_done { next.set(AppState::Tavern); } else {
+                        if save.tutorial_done { next.set(if save.last_scene == 1 { AppState::WorldMap } else { AppState::Tavern }); } else {
                             *setup = crate::battle::BattleSetup { map: 0, level: (1, 1), tutorial: true, ..default() };
                             next.set(AppState::Battle);
                         }

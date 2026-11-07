@@ -262,6 +262,9 @@ pub struct FxAnim {
     pub follow: Option<Entity>,
     pub life: f32, // >0 = despawn after; 0 = when once done
     pub z: f32,
+    /// v0.1.13: seconds to stay hidden before the strip starts (staggered arrow rain etc.); the old battle-side
+    /// FxDelay hid the sprite but animate_fx kept running, so short strips finished (and despawned) unseen.
+    pub wait: f32,
 }
 
 /// Display scale for FX strips. Sheets are half-res ACB (same pipeline as unit sprites).
@@ -281,7 +284,7 @@ pub fn spawn_fx(cmd: &mut Commands, fx: &FxSheets, name: &str, pos: Vec2, z: f32
     let e = cmd.spawn((
         s,
         Transform::from_translation(pos.extend(z)),
-        FxAnim { frames: info.frames.max(1), frame: 0, t: 0.0, once, done: false, follow, life, z },
+        FxAnim { frames: info.frames.max(1), frame: 0, t: 0.0, once, done: false, follow, life, z, wait: 0.0 },
         crate::ui::Scr,
     )).id();
     Some(e)
@@ -290,11 +293,16 @@ pub fn spawn_fx(cmd: &mut Commands, fx: &FxSheets, name: &str, pos: Vec2, z: f32
 pub fn animate_fx(
     time: Res<Time>,
     mut cmd: Commands,
-    mut q: Query<(Entity, &mut FxAnim, &mut Sprite, &mut Transform)>,
+    mut q: Query<(Entity, &mut FxAnim, &mut Sprite, &mut Transform, &mut Visibility)>,
     follows: Query<&Transform, Without<FxAnim>>,
 ) {
     let dt = time.delta_secs();
-    for (e, mut a, mut s, mut t) in q.iter_mut() {
+    for (e, mut a, mut s, mut t, mut vis) in q.iter_mut() {
+        if a.wait > 0.0 {
+            a.wait -= dt;
+            *vis = if a.wait > 0.0 { Visibility::Hidden } else { Visibility::Inherited };
+            if a.wait > 0.0 { continue; }
+        }
         if let Some(u) = a.follow {
             if let Ok(ut) = follows.get(u) {
                 t.translation.x = ut.translation.x;

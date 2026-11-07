@@ -143,7 +143,7 @@ pub fn new_game(data: &data::GameData) -> save::Save {
         let root = data.hero(h).skill_tree.iter().find(|n| n.before < 0 && data.skill(n.skill).map(|s| s.kind == types::SkillKind::Active).unwrap_or(false)).map(|n| n.skill);
         let mut oh = save::Save::new_hero(h, root); starter_weapon(data, &mut oh); heroes.push(oh);
     }
-    let mut s = save::Save { money_x4: 2000 * 4, heroes, party: vec![0, 1], stash: vec![None; save::STASH], shop: vec![None; save::SHOP], unlocked: 0, current_node: 0, sound: true, music: true, medals: 0, arena_score: 0, bag_tabs: 1, team_size: 3, tutorial_done: false, castles: vec![], pets: vec![], active_pet: None, badges: 0, stars: 0, battle_speed: 1, found: vec![], survival_best: 0 };
+    let mut s = save::Save { money_x4: 2000 * 4, heroes, party: vec![0, 1], stash: vec![None; save::STASH], shop: vec![None; save::SHOP], unlocked: 0, current_node: 0, sound: true, music: true, medals: 0, arena_score: 0, bag_tabs: 1, team_size: 3, tutorial_done: false, castles: vec![], pets: vec![], active_pet: None, badges: 0, stars: 0, battle_speed: 1, found: vec![], survival_best: 0, last_scene: 0, map_pos: None };
     store::refresh_shop(data, &mut s);
     s
 }

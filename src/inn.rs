@@ -1,11 +1,11 @@
 //! SceneGameMenu — the Inn/Tavern hub (bar_bg interior, bar_table_0 counter, two animated innkeepers).
 //! The props are hotspots wired to the scenes SceneGameMenu::OnUIEvent switches to; pressing a prop shows
 //! the original bar_* sign for it. Positions come from the English build's gamedata/Bar.xml.
-use crate::{anim::*, data::GameData, ui::*, AppState};
+use crate::{anim::*, data::GameData, save::Save, ui::*, AppState};
 use bevy::prelude::*;
 
 pub fn plugin(app: &mut App) {
-    app.add_systems(OnEnter(AppState::Tavern), enter)
+    app.add_systems(OnEnter(AppState::Tavern), (enter, |mut save: ResMut<Save>| if save.last_scene != 0 { save.last_scene = 0; save.write(); }))
         .add_systems(Update, keys.run_if(in_state(AppState::Tavern)))
         .add_systems(OnExit(AppState::Tavern), despawn_screen);
 }

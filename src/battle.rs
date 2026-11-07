@@ -9,7 +9,7 @@ use bevy::prelude::*;
 pub fn plugin(app: &mut App) {
     app.init_resource::<Run>().init_resource::<NewHeroNotice>()
         .add_systems(OnEnter(AppState::Battle), enter)
-        .init_resource::<AutoAim>().add_systems(Update, (input, director, tutorial, ai, projectiles, skill_bolts, fx_delays, effects, order_marks, hud, end_check, outro, outro_hide).chain().run_if(in_state(AppState::Battle)))
+        .init_resource::<AutoAim>().add_systems(Update, (input, director, tutorial, ai, dashes, projectiles, skill_bolts, fx_delays, effects, order_marks, hud, end_check, outro, outro_hide).chain().run_if(in_state(AppState::Battle)))
         .add_systems(OnExit(AppState::Battle), (despawn_screen, unpause));
 }
 
@@ -84,13 +84,21 @@ fn spawn_skill_fx(cmd: &mut Commands, fx: &FxSheets, skill: &Skill, caster: Enti
         let once = life <= 0.0;
         let at_target = v.pos >= 4 || v.move_type == 2;
         let pos = if at_target { target_pos.unwrap_or(caster_pos) } else { caster_pos + Vec2::Y * 40.0 };
-        let follow = if v.move_type == 1 {
+        // move_type 3 (Charge charge_line, Rush kuangchuiTX): the streak rides on the dashing caster
+        let follow = if v.move_type == 3 { Some(caster) } else if v.move_type == 1 {
             if at_target { target } else { Some(caster) }
         } else { None };
         let n = v.number.max(1) as usize;
         for k in 0..n {
-            let jitter = if v.pos == 4 { Vec2::new(fastrand::f32() * 80.0 - 40.0, fastrand::f32() * 40.0 - 20.0) } else { Vec2::ZERO };
-            let p = pos + jitter + Vec2::X * (k as f32 * 8.0);
+            // pos 4 (Arrow Rain: number 20, delta 70): the arrows land scattered over the attr's area box around the target
+            // (attr width×height in original units, ×2 on screen), not in a 80 px clump. The strip's anchor (arrow tip) is
+            // put on the landing point.
+            let (aw, ah) = skill.attrs.iter().find_map(|a| a.width.map(|w| (w * 2.0, a.height.unwrap_or(w) * 2.0))).unwrap_or((100.0, 100.0));
+            let p = if v.pos == 4 && n > 1 {
+                let info = &fx.info[name];
+                let tip = Vec2::new(info.cell.0 as f32 / 2.0 - info.anchor.0, info.anchor.1 - info.cell.1 as f32 / 2.0) * FX_SCALE;
+                pos + Vec2::new((fastrand::f32() - 0.5) * aw.max(160.0), (fastrand::f32() - 0.5) * ah.max(80.0) * 0.6) + tip
+            } else if v.pos == 4 { pos + Vec2::new(fastrand::f32() * 80.0 - 40.0, fastrand::f32() * 40.0 - 20.0) } else { pos };
             let start_delay = delay + (v.delta.max(0) as f32 / 1000.0) * k as f32;
             // use life field: negative life = wait then play (reuse Floating pattern via life offset)
             let play_life = if start_delay > 0.0 { -(start_delay) } else if life > 0.0 { life } else { 0.0 };
@@ -100,11 +108,13 @@ fn spawn_skill_fx(cmd: &mut Commands, fx: &FxSheets, skill: &Skill, caster: Enti
                     let dest = target_pos.unwrap_or(caster_pos + Vec2::X * 200.0);
                     cmd.entity(e).insert(SkillBolt { to: dest, speed: 520.0, delay: start_delay });
                 }
-            } else if let Some(e) = spawn_fx(cmd, fx, name, p, 55.0, once, if life > 0.0 { life } else { 0.0 }, follow) {
+            } else if let Some(e) = { let (once, life) = if v.move_type == 3 && life <= 0.0 { (false, 0.4) } else { (once, life) }; spawn_fx(cmd, fx, name, p, 55.0, once, if life > 0.0 { life } else { 0.0 }, follow) } {
                 if start_delay > 0.0 {
                     cmd.entity(e).insert(Visibility::Hidden);
-                    cmd.entity(e).insert(FxDelay(start_delay));
+                    let d = start_delay;
+                    cmd.entity(e).queue(move |mut w: EntityWorldMut| { if let Some(mut a) = w.get_mut::<FxAnim>() { a.wait = d; } });
                 }
+                if v.move_type == 3 { if let Some(tp) = target_pos { if tp.x < caster_pos.x { cmd.entity(e).queue(|mut w: EntityWorldMut| { if let Some(mut s) = w.get_mut::<Sprite>() { s.flip_x = true; } }); } } }
                 let _ = e;
             }
             // action sound on first
@@ -121,6 +131,18 @@ fn spawn_skill_fx(cmd: &mut Commands, fx: &FxSheets, skill: &Skill, caster: Enti
 struct SkillBolt { to: Vec2, speed: f32, delay: f32 }
 #[derive(Component)]
 struct FxDelay(f32);
+/// Charge / Rush: caster slides from `from` to `to` over `dur` seconds (ease-out)
+#[derive(Component)]
+struct Dash { from: Vec2, to: Vec2, t: f32, dur: f32 }
+fn dashes(time: Res<Time>, mut cmd: Commands, mut q: Query<(Entity, &mut Dash, &mut Transform)>) {
+    for (e, mut d, mut t) in &mut q {
+        d.t += time.delta_secs();
+        let k = (d.t / d.dur).min(1.0);
+        let p = d.from.lerp(d.to, 1.0 - (1.0 - k) * (1.0 - k));
+        t.translation.x = p.x; t.translation.y = p.y;
+        if k >= 1.0 { cmd.entity(e).remove::<Dash>(); }
+    }
+}
 
 #[derive(Component)]
 struct Floating(f32);
@@ -515,7 +537,7 @@ fn input(mut cmd: Commands, keys: Res<ButtonInput<KeyCode>>, mouse: Res<ButtonIn
         save.battle_speed = save.battle_speed % 3 + 1; save.write(); sfx.play("sfx_select");
         toast.0 = Some((format!("Battle speed ×{}", save.battle_speed), 1.2));
     }
-    vt.set_relative_speed(save.battle_speed.clamp(1, 3) as f32);
+    vt.set_relative_speed(save.battle_speed.clamp(1, 3) as f32 * std::env::var("HVSM_TIMESCALE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0));
     if let Ok(mut v) = ov.single_mut() { *v = if vt.is_paused() { Visibility::Visible } else { Visibility::Hidden }; }
     if keys.just_pressed(KeyCode::Escape) { next.set(AppState::WorldMap); return; }
     if keys.just_pressed(KeyCode::F5) { next.set(AppState::Battle); return; }
@@ -813,6 +835,16 @@ fn ai(mut cmd: Commands, fx: Res<FxSheets>, time: Res<Time>, data: Res<GameData>
                 TextColor(Color::srgb(1.0, 0.85, 0.2)), Transform::from_translation((pos + Vec2::Y * 150.0).extend(65.0)), Scr, Floating(1.2))).id();
             let _ = lbl;
             spawn_skill_fx(&mut cmd, &fx, &s, e, pos, u.target.and_then(alive), u.target);
+            // Charge / Blessed Charge / Rush (effect move_type 3): the caster rushes to the target
+            if s.effects.iter().any(|v| v.move_type == 3) {
+                if let Some(tp) = u.target.and_then(alive) {
+                    let side = if tp.x >= pos.x { -1.0 } else { 1.0 };
+                    let to = (tp + Vec2::X * side * 55.0).clamp(FIELD_MIN, FIELD_MAX);
+                    if std::env::var("HVSM_CASTLOG").is_ok() { eprintln!("DASH {:?} {:?} -> {:?}", e, pos, to); }
+                    cmd.entity(e).insert(Dash { from: pos, to, t: 0.0, dur: (to.distance(pos) / 1400.0).clamp(0.12, 0.35) });
+                    u.move_to = None;
+                }
+            }
         }
         // AIManager::OnUpdate: an enemy (or, with auto-battle on, a hero) standing outside the screen's x bounds is sent to
         // a random x inside them (GORoleCB::SetTarget), keeping its y
@@ -886,7 +918,10 @@ fn ai(mut cmd: Commands, fx: Res<FxSheets>, time: Res<Time>, data: Res<GameData>
             }
         } else if u.atk_cd <= 0.0 {
             u.atk_cd = (u.f.attack_interval * (1.0 + u.st.aspd.0)).max(0.4);
-            play(&mut anims, anim, Row::Attack, true, face);
+            // dual wield: alternate main-hand double_attack_a and off-hand double_attack_b swings
+            u.ex.swing = u.ex.swing.wrapping_add(1);
+            let off = u.ex.off_dice.is_some() && u.ex.swing % 2 == 0;
+            play(&mut anims, anim, if off { Row::Skill } else { Row::Attack }, true, face);
             if std::env::var("HVSM_ATKLOG").is_ok() && u.ranged { eprintln!("ATKLOG start {:?} t={:.3} hit_t={:.3}", e, time.elapsed_secs(), u.hit_t); }
             run.pending.push((u.hit_t, e, te, u.ranged || friendly, friendly));
         } else if !(anim.and_then(|c| anims.get(c).ok()).map(|a| a.once && !a.done).unwrap_or(false)) {
@@ -980,7 +1015,15 @@ fn ai(mut cmd: Commands, fx: Res<FxSheets>, time: Res<Time>, data: Res<GameData>
 
 #[allow(clippy::too_many_arguments)]
 fn apply(cmd: &mut Commands, f: &Fonts, fx: &FxSheets, q: &mut Query<(Entity, &mut Unit, &mut Transform, &Children)>, rng: &mut fastrand::Rng, te: Entity, src: Entity, amt: f32, heal: bool, anims: &mut Query<&mut Anim>) {
-    let atk = q.get(src).ok().map(|(_, u, _, _)| (u.f, u.buff.1 + u.st.atk.0.round() as i32));
+    let atk = q.get(src).ok().map(|(_, u, _, _)| {
+        let mut f = u.f;
+        // off-hand swing: the slot-2 weapon's dice at off_mult
+        if let (Some((lo, hi)), true) = (u.ex.off_dice, u.ex.swing % 2 == 0) {
+            f.weapon_min = (lo as f32 * u.ex.off_mult).round() as i32; f.weapon_max = ((hi as f32 * u.ex.off_mult).round() as i32).max(f.weapon_min);
+            if std::env::var("HVSM_ATKLOG").is_ok() { eprintln!("ATKLOG offhand swing {} dice {}..{}", u.ex.swing, f.weapon_min, f.weapon_max); }
+        }
+        (f, u.buff.1 + u.st.atk.0.round() as i32)
+    });
     let Ok((_, mut u, t, ch)) = q.get_mut(te) else { return };
     if u.dead { return; }
     let pos = t.translation.truncate();
