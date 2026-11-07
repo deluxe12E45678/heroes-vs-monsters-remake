@@ -67,6 +67,12 @@ fn enter(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, data: Res<GameDa
     let start = roam.pos.unwrap_or_else(|| { let (x, y) = data.world.begin; if x > 0.0 { to_world(&data, x, y) } else { node_pos(&data, 0) } });
     roam.pos = Some(start);
     roam.pending = None;
+    // v0.1.12 soft-lock fix: a Fight/Retreat prompt left open when a HUD button (Inn/Shop/...) changed screen kept
+    // roam.prompt = Some after its panel was despawned, so walk() and taps were ignored forever. Treat it as RETREAT.
+    if let Some((_, mark)) = roam.prompt.take() {
+        roam.walked = 0.0; roam.walk_check = 0;
+        if let Some(m) = mark { roam.marks.push(m); }
+    }
     refill_marks(&data, &save, &mut roam);
     for (p, kind, _) in &roam.marks {
         // UserMoveMapTaskNode::initNode: just the looping CompAnimObj (WorldMoveMap.xml animation = Renwu_mark skull for <Task>,
@@ -329,7 +335,10 @@ fn walk(mut cmd: Commands, a: Res<AssetServer>, f: Res<Fonts>, time: Res<Time>, 
     let np = if d.length() <= step { w.dest = None; dest } else { pos + d.normalize() * step };
     let px = to_px(&data, np);
     // locked areas are closed off
-    if let Some(n) = data.world.nodes.iter().find(|n| n.radius > 0.0 && !open(&save, n.index) && px.distance(Vec2::new(n.x, n.y)) <= n.radius * 0.8) {
+    // only block stepping *into* a locked area; if the walker is already inside one (old save / edge case) let it walk out
+    let cur_px = to_px(&data, pos);
+    let in_locked = |q: Vec2| data.world.nodes.iter().find(|n| n.radius > 0.0 && !open(&save, n.index) && q.distance(Vec2::new(n.x, n.y)) <= n.radius * 0.8);
+    if let Some(n) = in_locked(px).filter(|_| in_locked(cur_px).is_none()) {
         w.dest = None; toast.0 = Some((format!("Locked area (Lv{}-{})", n.min_level, n.max_level), 2.0)); let _ = n; return;
     }
     let moved = (np - pos).length() / 2.0; // in map pixels
